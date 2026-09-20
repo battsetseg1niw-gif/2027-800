@@ -1,0 +1,6 @@
+{
+  "name": "SmartESH",
+  "description": "Монголын Англи хэлний ЭЕШ-д бэлтгэх бүрэн ажиллагаатай веб платформ - Сурагч, Багш, Админ систем",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
