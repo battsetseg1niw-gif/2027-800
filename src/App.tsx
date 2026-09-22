@@ -4,6 +4,7 @@ import { StudentDashboard } from "./components/StudentDashboard";
 import { TeacherDashboard } from "./components/TeacherDashboard";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { AuthScreen } from "./components/AuthScreen";
+import { PublicLanding } from "./components/PublicLanding";
 import { ExamArchiveView } from "./components/ExamArchiveView";
 import { ExamRunner } from "./components/ExamRunner";
 import { OMRScannerView } from "./components/OMRScannerView";
@@ -453,7 +454,7 @@ export default function App() {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-semibold">Уншиж байна...</div>;
   }
   if (!currentUser) {
-    return <AuthScreen />;
+    return <PublicLanding />;
   }
 
   return (
