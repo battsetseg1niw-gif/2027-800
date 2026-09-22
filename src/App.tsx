@@ -3,6 +3,8 @@ import { Navbar } from "./components/Navbar";
 import { StudentDashboard } from "./components/StudentDashboard";
 import { TeacherDashboard } from "./components/TeacherDashboard";
 import { AdminDashboard } from "./components/AdminDashboard";
+import { AuthScreen } from "./components/AuthScreen";
+import { PublicLanding } from "./components/PublicLanding";
 import { ExamArchiveView } from "./components/ExamArchiveView";
 import { ExamRunner } from "./components/ExamRunner";
 import { OMRScannerView } from "./components/OMRScannerView";
@@ -11,7 +13,7 @@ import { LearningCenterView } from "./components/LearningCenterView";
 import { TeacherQuestionBankManager } from "./components/TeacherQuestionBankManager";
 import { PremiumModal } from "./components/PremiumModal";
 import { SqlSchemaModal } from "./components/SqlSchemaModal";
-import { db } from "./lib/supabase";
+import { db, supabase } from "./lib/supabase";
 import {
   Role,
   UserProfile,
@@ -49,6 +51,7 @@ export default function App() {
   const [activationCodes, setActivationCodes] = useState<ActivationCode[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [authReady, setAuthReady] = useState(false);
 
   // Modals & Active Exam Session
   const [activeExamSession, setActiveExamSession] = useState<{
@@ -58,12 +61,54 @@ export default function App() {
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [showSqlModal, setShowSqlModal] = useState(false);
 
-  // Initialize data from local DB store
+  // Production authentication: never auto-login as a demo/local user.
   useEffect(() => {
-    refreshData();
+    if (!supabase) {
+      setAuthReady(true);
+      setCurrentUser(null);
+      return;
+    }
+
+    const loadSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.user) {
+        setCurrentUser(null);
+        setAuthReady(true);
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", data.session.user.id)
+        .single();
+
+      if (profile) {
+        const user: UserProfile = {
+          id: profile.id,
+          email: profile.email,
+          name: profile.name,
+          role: profile.role,
+          school: profile.school || "",
+          grade: profile.grade || "",
+          isPremium: Boolean(profile.is_premium),
+          premiumExpiresAt: profile.premium_expires_at || undefined,
+          joinedAt: profile.created_at || new Date().toISOString(),
+          targetEshScore: profile.target_esh_score || 650,
+        };
+        setActiveRole(user.role);
+        setCurrentUser(user);
+        refreshData(user);
+      }
+      setAuthReady(true);
+    };
+
+    loadSession();
+    const { data: listener } = supabase.auth.onAuthStateChange(() => loadSession());
+    return () => listener.subscription.unsubscribe();
   }, []);
 
-  const refreshData = () => {
+  const refreshData = (authenticatedUser?: UserProfile) => {
     const allUsers = db.getUsers();
     setUsers(allUsers);
     setExams(db.getExams());
@@ -76,22 +121,7 @@ export default function App() {
     setNotifications(db.getNotifications());
     setSupportTickets(db.getSupportTickets());
 
-    // Set current user based on active role
-    let matched = allUsers.find((u) => u.role === activeRole);
-    if (!matched && activeRole === "admin") {
-      matched = {
-        id: "usr-admin-1",
-        email: "admin@smartesh.mn",
-        name: "SmartESH Админ",
-        role: "admin",
-        school: "SmartESH Төв",
-        grade: "Системийн Ерөнхий Админ",
-        isPremium: true,
-        premiumExpiresAt: "2030-12-31",
-        joinedAt: "2025-01-01",
-      };
-    }
-    setCurrentUser(matched || allUsers[0]);
+    if (authenticatedUser) setCurrentUser(authenticatedUser);
   };
 
   // Handle role switch
@@ -420,8 +450,11 @@ export default function App() {
     setMistakes(db.getMistakes());
   };
 
-  if (!currentUser) {
+  if (!authReady) {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-semibold">Уншиж байна...</div>;
+  }
+  if (!currentUser) {
+    return <PublicLanding />;
   }
 
   return (
