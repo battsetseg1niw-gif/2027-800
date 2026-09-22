@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import { GraduationCap, BookOpen, Sparkles, BookmarkCheck, BrainCircuit, BarChart3, PlayCircle, LogIn, UserPlus } from "lucide-react";
 import { AuthScreen } from "./AuthScreen";
+import { PublicExplore } from "./PublicExplore";
 
 export function PublicLanding() {
   const [authOpen, setAuthOpen] = useState(false);
+  const [explore, setExplore] = useState<string | null>(null);
   if (authOpen) return <AuthScreen />;
+  if (explore) return <PublicExplore section={explore} onBack={() => setExplore(null)} onAuth={() => setAuthOpen(true)} />;
 
   const requireAccount = () => setAuthOpen(true);
   return (
@@ -50,7 +53,11 @@ export function PublicLanding() {
             [BookmarkCheck,"Алдааны дэвтэр","Алдсан асуултаа дахин давтаж сул сэдвээ нөхнө."],
             [BrainCircuit,"AI Smart Feedback","Гүйцэтгэл дээр тулгуурласан тайлбар, зөвлөмж авна."],
             [BarChart3,"Ахиц ба шинжилгээ","Оноо, сэдэв, ахицын мэдээллээ нэг дор харна."],
-          ].map(([Icon,title,desc]: any) => <button key={title} onClick={requireAccount} className="text-left bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-md transition-shadow"><Icon className="w-7 h-7 text-blue-600"/><div className="font-extrabold mt-4">{title}</div><div className="text-sm text-slate-600 mt-1">{desc}</div><div className="text-xs font-bold text-blue-600 mt-4">Нээж үзэх →</div></button>)}
+          ].map(([Icon,title,desc]: any, i:number) => <button key={title} onClick={() => setExplore(["archive","mock","practice","mistakes","ai","learning"][i])} className="text-left bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-md transition-shadow"><Icon className="w-7 h-7 text-blue-600"/><div className="font-extrabold mt-4">{title}</div><div className="text-sm text-slate-600 mt-1">{desc}</div><div className="text-xs font-bold text-blue-600 mt-4">Нээж үзэх →</div></button>)}
+        </section>
+        <section className="grid md:grid-cols-2 gap-4">
+          <button onClick={() => setExplore("teacher")} className="text-left bg-white border border-slate-200 rounded-2xl p-6"><div className="font-extrabold text-lg">Багшид зориулсан SmartESH</div><p className="text-sm text-slate-600 mt-2">Анги, тест, OMR, сурагчдын ахицын боломжуудтай танилцах →</p></button>
+          <button onClick={() => setExplore("pricing")} className="text-left bg-white border border-slate-200 rounded-2xl p-6"><div className="font-extrabold text-lg">Эрхийн нөхцөл</div><p className="text-sm text-slate-600 mt-2">Бүртгэл болон ашиглах эрхийн нөхцөлтэй танилцах →</p></button>
         </section>
 
         <section className="rounded-3xl bg-white border border-slate-200 p-7 text-center">
