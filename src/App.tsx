@@ -12,7 +12,7 @@ import { LearningCenterView } from "./components/LearningCenterView";
 import { TeacherQuestionBankManager } from "./components/TeacherQuestionBankManager";
 import { PremiumModal } from "./components/PremiumModal";
 import { SqlSchemaModal } from "./components/SqlSchemaModal";
-import { db } from "./lib/supabase";
+import { db, supabase } from "./lib/supabase";
 import {
   Role,
   UserProfile,
