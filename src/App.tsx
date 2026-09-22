@@ -122,9 +122,6 @@ export default function App() {
 
     if (authenticatedUser) setCurrentUser(authenticatedUser);
   };
-    }
-    setCurrentUser(matched || allUsers[0]);
-  };
 
   // Handle role switch
   const handleRoleChange = (newRole: Role) => {
