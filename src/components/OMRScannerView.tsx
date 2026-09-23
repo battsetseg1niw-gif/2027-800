@@ -32,6 +32,103 @@ import {
 import { Exam, OMRScanRecord, ExamSubmission, ClassRoom, UserProfile, Question, MistakeItem } from "../types";
 import { LocalDatabaseStore } from "../lib/supabase";
 import { OfficialOMRSheet } from "./OfficialOMRSheet";
+import { OMRDebugUtility, ParseMismatch, ParsedQuestionItem } from "./OMRDebugUtility";
+
+const SAMPLE_TAG_QUESTIONS_15 = `12-р ангийн Англи хэл - Tag Questions (15 Даалгавар)
+Хувилбар A
+
+1. He lives in Ulaanbaatar with his family, _________?
+A) does he
+B) doesn't he
+C) isn't he
+D) is he
+
+2. You haven't sent the project proposal yet, _________?
+A) haven't you
+B) have you
+C) did you
+D) don't you
+
+3. She was very happy with her exam score, _________?
+A) wasn't she
+B) was she
+C) isn't she
+D) didn't she
+
+4. They won't arrive before midnight, _________?
+A) will they
+B) won't they
+C) do they
+D) are they
+
+5. Let's practice English speaking together this evening, _________?
+A) will we
+B) shall we
+C) don't we
+D) do we
+
+6. Nobody called me while I was away, _________?
+A) did they
+B) didn't they
+C) did he
+D) didn't he
+
+7. You are coming to our study group tomorrow, _________?
+A) are you
+B) aren't you
+C) do you
+D) won't you
+
+8. He can solve these physics problems easily, _________?
+A) can he
+B) can't he
+C) does he
+D) isn't he
+
+9. There isn't any milk left in the fridge, _________?
+A) is there
+B) isn't there
+C) is it
+D) are there
+
+10. You used to play basketball when you were in middle school, _________?
+A) didn't you
+B) did you
+C) weren't you
+D) don't you
+
+11. She hardly ever complains about anything, _________?
+A) does she
+B) doesn't she
+C) is she
+D) isn't she
+
+12. The train leaves at 8:00 AM every Monday, _________?
+A) doesn't it
+B) does it
+C) isn't it
+D) will it
+
+13. You had already read this article before the class, _________?
+A) hadn't you
+B) had you
+C) didn't you
+D) haven't you
+
+14. Open the window and let some fresh air in, _________?
+A) will you
+B) shall you
+C) do you
+D) don't you
+
+15. I am responsible for organizing this event, _________?
+A) am not I
+B) aren't I
+C) isn't I
+D) don't I
+
+Answers / Түлхүүр:
+1-B, 2-B, 3-A, 4-A, 5-B, 6-A, 7-B, 8-B, 9-A, 10-A, 11-A, 12-A, 13-A, 14-A, 15-B`;
 
 interface OMRScannerViewProps {
   exams: Exam[];
@@ -54,8 +151,8 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
   onCreateExam,
   preselectedExamId,
 }) => {
-  // Top level active tab: "prepare-print" | "scan-grade" | "scan-history"
-  const [activeTab, setActiveTab] = useState<"prepare-print" | "scan-grade" | "scan-history">("prepare-print");
+  // Top level active tab: "prepare-print" | "scan-grade" | "scan-history" | "pdf-debugger"
+  const [activeTab, setActiveTab] = useState<"prepare-print" | "scan-grade" | "scan-history" | "pdf-debugger">("prepare-print");
 
   // Selected Exam for OMR
   const [selectedExamId, setSelectedExamId] = useState<string>(
@@ -72,22 +169,17 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
   const [showNewExamModal, setShowNewExamModal] = useState(false);
   const [examCreationMode, setExamCreationMode] = useState<"pdf_ai" | "manual">("pdf_ai");
   const [newExamTitle, setNewExamTitle] = useState("");
+  const [newExamCategory, setNewExamCategory] = useState<"past_paper" | "mock" | "practice">("past_paper");
+  const [newExamYear, setNewExamYear] = useState<number>(2024);
   const [newExamVariant, setNewExamVariant] = useState<"A" | "B" | "C" | "D">("A");
   const [newExamQCount, setNewExamQCount] = useState<number>(50);
   const [pdfFileName, setPdfFileName] = useState<string>("12_Angi_ESH_Uulirlyn_Sorilt_2026.pdf");
+  const [rawOcrText, setRawOcrText] = useState<string>("");
+  const [pdfFileBase64, setPdfFileBase64] = useState<string | null>(null);
+  const [parseMismatches, setParseMismatches] = useState<ParseMismatch[]>([]);
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState<boolean>(false);
   const [pdfAnalysisStep, setPdfAnalysisStep] = useState<string>("");
-  const [aiQuestionsList, setAiQuestionsList] = useState<Array<{
-    questionNumber: number;
-    text: string;
-    category: string;
-    topic: string;
-    subtopic: string;
-    correctAnswer: string;
-    confidence: number;
-    isAmbiguous: boolean;
-    explanation: string;
-  }>>([]);
+  const [aiQuestionsList, setAiQuestionsList] = useState<ParsedQuestionItem[]>([]);
   const [filterAmbiguousOnly, setFilterAmbiguousOnly] = useState<boolean>(false);
   const [expandedExplanationQ, setExpandedExplanationQ] = useState<number | null>(null);
   const [copiedRosterMsg, setCopiedRosterMsg] = useState<string | null>(null);
@@ -102,7 +194,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
   });
 
   // Scan & Grade State
-  const [scanStudentCode, setScanStudentCode] = useState<string>("104829");
+  const [scanStudentCode, setScanStudentCode] = useState<string>("");
   const [isScanning, setIsScanning] = useState(false);
   const [uploadedPreview, setUploadedPreview] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<OMRScanRecord | null>(null);
@@ -126,7 +218,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
     const found = users.filter((u) => cls.studentIds.includes(u.id) || (u.classCodes && u.classCodes.includes(cls.code)));
     return found.map((u, idx) => ({
       ...u,
-      studentCode: u.studentCode && u.studentCode.length === 6 ? u.studentCode : `${104829 + idx}`,
+      studentCode: u.studentCode && u.studentCode.length === 6 ? u.studentCode : (u.id ? u.id.replace(/\D/g, "").padEnd(6, "0").slice(0, 6) : `${100000 + idx}`),
     }));
   }, [selectedClassId, classes, users]);
 
@@ -156,28 +248,99 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // AI PDF Exam Key Generator
-  const handleAnalyzePdfKeys = async () => {
+  // Dedicated File Upload handler for PDFs, text files, etc.
+  const handlePdfFileUpload = (file: File) => {
+    setPdfFileName(file.name);
+    if (!newExamTitle) {
+      setNewExamTitle(file.name.replace(/\.[^/.]+$/, ""));
+    }
+
+    if (file.type.includes("text") || file.name.endsWith(".txt") || file.name.endsWith(".md")) {
+      const textReader = new FileReader();
+      textReader.onload = () => {
+        const text = textReader.result as string;
+        setRawOcrText(text);
+        handleAnalyzePdfKeys(text, undefined, file.name.replace(/\.[^/.]+$/, ""));
+      };
+      textReader.readAsText(file);
+    } else {
+      const b64Reader = new FileReader();
+      b64Reader.onload = () => {
+        const b64 = b64Reader.result as string;
+        setPdfFileBase64(b64);
+        handleAnalyzePdfKeys(undefined, undefined, file.name.replace(/\.[^/.]+$/, ""), b64);
+      };
+      b64Reader.readAsDataURL(file);
+    }
+  };
+
+  // Load Sample Presets for Testing
+  const handleLoadPreset = (type: "tag_questions_15" | "esh_2024_50" | "short_quiz_10") => {
+    if (type === "tag_questions_15") {
+      const title = "12-р анги - Tag Questions (15 Даалгавар)";
+      setPdfFileName("Tag_Questions_15_Test.pdf");
+      setNewExamTitle(title);
+      setNewExamVariant("A");
+      setNewExamQCount(15);
+      setRawOcrText(SAMPLE_TAG_QUESTIONS_15);
+      handleAnalyzePdfKeys(SAMPLE_TAG_QUESTIONS_15, 15, title, null);
+    } else if (type === "esh_2024_50") {
+      const title = "ЭЕШ 2024 Англи хэл (Хувилбар A)";
+      setPdfFileName("ESH_English_2024_A.pdf");
+      setNewExamTitle(title);
+      setNewExamVariant("A");
+      setNewExamQCount(50);
+      handleAnalyzePdfKeys("", 50, title, null);
+    } else {
+      const title = "Англи хэлний түргэн сорил (10 Даалгавар)";
+      setPdfFileName("Short_English_Quiz_10.pdf");
+      setNewExamTitle(title);
+      setNewExamVariant("A");
+      setNewExamQCount(10);
+      handleAnalyzePdfKeys("", 10, title, null);
+    }
+  };
+
+  // AI PDF Exam Key Generator & OCR Inspector
+  const handleAnalyzePdfKeys = async (
+    overrideContent?: string,
+    overrideQCount?: number,
+    overrideTitle?: string,
+    overridePdfB64?: string | null
+  ) => {
     setIsAnalyzingPdf(true);
-    setPdfAnalysisStep("PDF баримтыг задлан шалгалтын хуудсуудыг уншиж байна...");
+    setPdfAnalysisStep("PDF баримтыг задлан OCR текстийг татаж байна...");
 
     try {
+      const contentToUse = overrideContent !== undefined ? overrideContent : rawOcrText;
+      const countToUse = overrideQCount || newExamQCount;
+      const titleToUse = overrideTitle || newExamTitle.trim() || "Шалгалтын сорилт";
+      const b64ToUse = overridePdfB64 !== undefined ? overridePdfB64 : pdfFileBase64;
+
       setTimeout(() => {
-        setPdfAnalysisStep("Асуулт тус бүрийн сэдэв & зөв хариултын түлхүүрийг AI тооцоолж байна...");
-      }, 600);
+        setPdfAnalysisStep("Асуулт тус бүрийн бүтэц, сонголтууд & зөв хариултыг AI шинжилж байна...");
+      }, 500);
 
       const res = await fetch("/api/exam/ai-solve-keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: newExamTitle.trim() || "12-р ангийн ЭЕШ сорилт",
-          totalQuestions: newExamQCount,
+          title: titleToUse,
+          totalQuestions: countToUse,
           variant: newExamVariant,
-          rawContent: `Шалгалтын файл: ${pdfFileName}. Хувилбар ${newExamVariant}. Стандарт 50 асуулт.`,
+          rawContent: contentToUse,
+          pdfBase64: b64ToUse,
+          fileName: pdfFileName,
         }),
       });
 
       const data = await res.json();
+      if (data.rawOcrText) {
+        setRawOcrText(data.rawOcrText);
+      }
+      if (data.detectedQuestionsCount && data.detectedQuestionsCount > 0) {
+        setNewExamQCount(data.detectedQuestionsCount);
+      }
       if (data.questions && Array.isArray(data.questions)) {
         setAiQuestionsList(data.questions);
         const newKey: Record<number, string> = {};
@@ -186,9 +349,14 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
         });
         setNewExamAnswerKey(newKey);
       }
-    } catch (e) {
+      if (data.parseMismatches && Array.isArray(data.parseMismatches)) {
+        setParseMismatches(data.parseMismatches);
+      } else {
+        setParseMismatches([]);
+      }
+    } catch (e: any) {
       console.error(e);
-      alert("AI түлхүүр танихад алдаа гарлаа. Стандарт түлхүүрүүд бэлтгэгдлээ.");
+      alert("AI түлхүүр танихад алдаа гарлаа: " + (e?.message || "Стандарт түлхүүрүүд бэлтгэгдлээ."));
     } finally {
       setIsAnalyzingPdf(false);
       setPdfAnalysisStep("");
@@ -202,7 +370,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
 
     try {
       const studentName = matchedStudent ? matchedStudent.name : "Сурагч";
-      const studentCode = scanStudentCode.trim() || (matchedStudent?.studentCode) || "104829";
+      const studentCode = scanStudentCode.trim() || (matchedStudent?.studentCode) || "";
       const total = currentExam.totalQuestions || 50;
 
       const res = await fetch("/api/omr/scan", {
@@ -315,14 +483,34 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
     let finalScore = 0;
     const wrongQuestionIds: string[] = [];
 
+    const catScores: {
+      Grammar: { correct: number; total: number };
+      Vocabulary: { correct: number; total: number };
+      Communication: { correct: number; total: number };
+      Reading: { correct: number; total: number };
+      [key: string]: { correct: number; total: number };
+    } = {
+      Grammar: { correct: 0, total: 0 },
+      Vocabulary: { correct: 0, total: 0 },
+      Communication: { correct: 0, total: 0 },
+      Reading: { correct: 0, total: 0 },
+    };
+
     for (let i = 1; i <= total; i++) {
       const ans = teacherOverrides[i] || scanResult.scannedAnswers[i]?.answer || "A";
       finalAnswers[i] = ans;
 
       const q = currentExam.questions[i - 1];
       const correctAns = q ? q.correctAnswer : "A";
+      const cat = q?.category || "Grammar";
+      if (!catScores[cat]) {
+        catScores[cat] = { correct: 0, total: 0 };
+      }
+      catScores[cat].total++;
+
       if (ans === correctAns) {
         finalScore++;
+        catScores[cat].correct++;
       } else if (q) {
         wrongQuestionIds.push(q.id);
       }
@@ -344,12 +532,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
       scaledScore,
       timeSpentSeconds: 4800,
       submittedAt: new Date().toISOString(),
-      categoryScores: {
-        Grammar: { correct: Math.round(finalScore * 0.45), total: 22 },
-        Vocabulary: { correct: Math.round(finalScore * 0.3), total: 14 },
-        Communication: { correct: Math.round(finalScore * 0.12), total: 6 },
-        Reading: { correct: Math.round(finalScore * 0.13), total: 8 },
-      },
+      categoryScores: catScores,
       wrongQuestionIds,
       source: "omr_paper",
       aiAnalysis: scanResult.aiAnalysis,
@@ -394,42 +577,60 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
     );
   };
 
-  // Save New Paper Exam (created either manually or via AI PDF upload)
-  const handleSaveNewExam = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newExamTitle.trim() || !onCreateExam) return;
+  // Save New Paper Exam (created either manually or via AI PDF upload or from Debug Utility)
+  const handleSaveNewExam = (e?: React.FormEvent) => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
+    const finalTitle = newExamTitle.trim() || `Англи хэлний шалгалт (${newExamQCount} даалгавар)`;
+    if (!onCreateExam) return;
 
     const questions: Question[] = [];
     for (let i = 1; i <= newExamQCount; i++) {
       const correct = newExamAnswerKey[i] || "A";
       const aiQ = aiQuestionsList.find((q) => q.questionNumber === i);
 
+      const resolvedOptions =
+        aiQ?.options && aiQ.options.length > 0
+          ? aiQ.options
+          : [
+              { id: "A", text: "Сонголт A" },
+              { id: "B", text: "Сонголт B" },
+              { id: "C", text: "Сонголт C" },
+              { id: "D", text: "Сонголт D" },
+              { id: "E", text: "Сонголт E" },
+            ];
+
       questions.push({
         id: `paper-q-${i}-${Date.now()}`,
         questionNumber: i,
         text: aiQ?.text || `Асуулт ${i}: (${aiQ?.topic || "Цаасан шалгалтын даалгавар"})`,
-        category: (aiQ?.category as any) || (i <= 22 ? "Grammar" : i <= 36 ? "Vocabulary" : i <= 42 ? "Communication" : "Reading"),
-        topic: aiQ?.topic || (i <= 22 ? "Grammar Structure" : i <= 36 ? "Vocabulary in Context" : i <= 42 ? "Dialogue & Everyday English" : "Reading Comprehension"),
+        category:
+          (aiQ?.category as any) ||
+          (i <= 22 ? "Grammar" : i <= 36 ? "Vocabulary" : i <= 42 ? "Communication" : "Reading"),
+        topic:
+          aiQ?.topic ||
+          (i <= 22
+            ? "Grammar Structure"
+            : i <= 36
+            ? "Vocabulary in Context"
+            : i <= 42
+            ? "Dialogue & Everyday English"
+            : "Reading Comprehension"),
         subtopic: aiQ?.subtopic || `Section ${i <= 22 ? "1" : i <= 36 ? "2" : i <= 42 ? "3" : "4"}`,
         difficulty: i % 3 === 0 ? "Hard" : i % 2 === 0 ? "Medium" : "Easy",
-        options: [
-          { id: "A", text: "Сонголт A" },
-          { id: "B", text: "Сонголт B" },
-          { id: "C", text: "Сонголт C" },
-          { id: "D", text: "Сонголт D" },
-          { id: "E", text: "Сонголт E" },
-        ],
+        options: resolvedOptions,
         correctAnswer: correct,
         explanation: aiQ?.explanation || `Шалгалтын албан ёсны түлхүүр: ${correct}`,
       });
     }
 
     const created: Exam = {
-      id: `paper-exam-${Date.now()}`,
-      title: newExamTitle.trim(),
-      year: 2026,
+      id: `exam-${newExamCategory}-${newExamYear}-${newExamVariant.toLowerCase()}-${Date.now()}`,
+      title: finalTitle,
+      year: newExamYear,
       variant: newExamVariant,
-      type: "teacher_custom",
+      type: newExamCategory,
       totalQuestions: newExamQCount,
       durationMinutes: 80,
       questions,
@@ -443,8 +644,10 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
     setSelectedExamId(created.id);
     setSelectedVariant(newExamVariant);
     setShowNewExamModal(false);
-    setNewExamTitle("");
-    setAiQuestionsList([]);
+    setActiveTab("scan-grade");
+    setSavedSuccessMsg(
+      `Шалгалт "${created.title}" (${newExamQCount} даалгавар, ${newExamYear} он) амжилттай цахим шалгалт болон системд бүртгэгдлээ! Сурагчид цахимаар өгөх боломжтой ба багш OMR хуудсыг хэвлэн сканнердаж болно.`
+    );
   };
 
   // Print Action
@@ -541,6 +744,23 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
         >
           <FileText className="w-4 h-4" />
           <span>3. Сканнердсан хуудсуудын түүх ({scannedHistory.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("pdf-debugger")}
+          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${
+            activeTab === "pdf-debugger"
+              ? "border-indigo-600 text-indigo-600"
+              : "border-transparent text-slate-700 hover:text-slate-800"
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-indigo-600" />
+          <span>4. 🔍 PDF & OCR Түлхүүр оношилгоо (Debug Utility)</span>
+          {parseMismatches.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-200 text-amber-900 font-bold">
+              {parseMismatches.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -656,7 +876,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
                       <option value="">-- Сурагч сонгох --</option>
                       {classStudents.map((stu) => (
                         <option key={stu.id} value={stu.id}>
-                          {stu.name} (Код: {stu.studentCode || "104829"})
+                          {stu.name} {stu.studentCode ? `(Код: ${stu.studentCode})` : ""}
                         </option>
                       ))}
                     </select>
@@ -756,8 +976,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
             examTitle={currentExam.title}
             variant={selectedVariant}
             studentName={selectedStudent?.name || ""}
-            studentCode={selectedStudent?.studentCode || "104829"}
-            registerNumber="УХ06251428"
+            studentCode={selectedStudent?.studentCode || ""}
             totalQuestions={currentExam.totalQuestions || 50}
           />
         </div>
@@ -786,7 +1005,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
                   maxLength={6}
                   value={scanStudentCode}
                   onChange={(e) => setScanStudentCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="Жишээ: 104829"
+                  placeholder="Жишээ: 123456"
                   className="w-full px-3 py-2 text-sm font-mono font-bold tracking-widest text-center border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
                 />
                 <p className="text-[10px] text-slate-700">
@@ -1174,6 +1393,38 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
       )}
 
       {/* ========================================================================= */}
+      {/* TAB 4: PDF & OCR DEBUGGING UTILITY */}
+      {/* ========================================================================= */}
+      {activeTab === "pdf-debugger" && (
+        <OMRDebugUtility
+          rawOcrText={rawOcrText}
+          onRawOcrTextChange={setRawOcrText}
+          aiQuestionsList={aiQuestionsList}
+          onAiQuestionsChange={setAiQuestionsList}
+          answerKeys={newExamAnswerKey}
+          onAnswerKeyChange={setNewExamAnswerKey}
+          parseMismatches={parseMismatches}
+          isAnalyzing={isAnalyzingPdf}
+          analysisStep={pdfAnalysisStep}
+          onReanalyze={(text) => handleAnalyzePdfKeys(text)}
+          onSaveExam={() => handleSaveNewExam()}
+          examTitle={newExamTitle}
+          onExamTitleChange={setNewExamTitle}
+          examVariant={newExamVariant}
+          onExamVariantChange={setNewExamVariant}
+          questionCount={newExamQCount}
+          onQuestionCountChange={(count) => setNewExamQCount(count)}
+          onFileUpload={handlePdfFileUpload}
+          pdfFileName={pdfFileName}
+          onLoadPreset={handleLoadPreset}
+          examCategory={newExamCategory}
+          onExamCategoryChange={setNewExamCategory}
+          examYear={newExamYear}
+          onExamYearChange={setNewExamYear}
+        />
+      )}
+
+      {/* ========================================================================= */}
       {/* MODAL: REGISTER NEW PAPER EXAM INTO SYSTEM (PDF + AI OR MANUAL) */}
       {/* ========================================================================= */}
       {showNewExamModal && (
@@ -1231,7 +1482,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
 
             <form onSubmit={handleSaveNewExam} className="space-y-5 text-xs">
               {/* Common Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="sm:col-span-2 space-y-1.5">
                   <label className="font-bold text-slate-700">Шалгалтын гарчиг / нэр:</label>
                   <input
@@ -1245,16 +1496,30 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700">Хувилбар:</label>
+                  <label className="font-bold text-slate-700">Ангилал:</label>
                   <select
-                    value={newExamVariant}
-                    onChange={(e) => setNewExamVariant(e.target.value as any)}
+                    value={newExamCategory}
+                    onChange={(e) => setNewExamCategory(e.target.value as any)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-indigo-500"
                   >
-                    <option value="A">Хувилбар A</option>
-                    <option value="B">Хувилбар B</option>
-                    <option value="C">Хувилбар C</option>
-                    <option value="D">Хувилбар D</option>
+                    <option value="past_paper">📘 Өмнөх оны ЭЕШ</option>
+                    <option value="mock">⚡ 7 хоногийн Mock</option>
+                    <option value="practice">🎯 Нэмэлт дасгал</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700">Он:</label>
+                  <select
+                    value={newExamYear}
+                    onChange={(e) => setNewExamYear(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {[2026, 2025, 2024, 2023, 2022, 2021, 2020].map((y) => (
+                      <option key={y} value={y}>
+                        {y} он
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -1299,7 +1564,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <label className="cursor-pointer px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors">
                         <span>Өөр файл сонгох</span>
                         <input
@@ -1309,10 +1574,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              setPdfFileName(file.name);
-                              if (!newExamTitle) {
-                                setNewExamTitle(file.name.replace(/\.[^/.]+$/, ""));
-                              }
+                              handlePdfFileUpload(file);
                             }
                           }}
                         />
@@ -1320,7 +1582,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
 
                       <button
                         type="button"
-                        onClick={handleAnalyzePdfKeys}
+                        onClick={() => handleAnalyzePdfKeys()}
                         disabled={isAnalyzingPdf}
                         className="px-4 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
                       >
@@ -1335,6 +1597,18 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
                             <span>AI-аар Зөв Түлхүүрийг Үүсгэх</span>
                           </>
                         )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowNewExamModal(false);
+                          setActiveTab("pdf-debugger");
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-xl border border-amber-300 flex items-center gap-1 transition-colors"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                        <span>🔍 Оношилгооны хэрэгсэлд нээх</span>
                       </button>
                     </div>
                   </div>
@@ -1448,7 +1722,7 @@ export const OMRScannerView: React.FC<OMRScannerViewProps> = ({
                                     const isChosen = currentVal === opt;
                                     return (
                                       <button
-                                        key={opt}
+                                        key={`${qNum}-${opt}`}
                                         type="button"
                                         onClick={() =>
                                           setNewExamAnswerKey({

@@ -28,13 +28,13 @@ export const OfficialOMRSheet: React.FC<OfficialOMRSheetProps> = ({
   examTitle = "ЭЕШ АНГЛИ ХЭЛНИЙ АЛБАН ЁСНЫ ШАЛГАЛТ",
   variant = "A",
   studentName = "",
-  studentCode = "104829",
+  studentCode = "",
   totalQuestions = 60,
   className = "",
   onClose,
 }) => {
   const [selectedVariant, setSelectedVariant] = useState<"A" | "B" | "C" | "D">(variant);
-  const [codeDigits, setCodeDigits] = useState(studentCode ? studentCode.padEnd(7, "0").slice(0, 7) : "1048290");
+  const [codeDigits, setCodeDigits] = useState(studentCode ? studentCode.padEnd(7, "0").slice(0, 7) : "");
   const [sheetQuestionCount, setSheetQuestionCount] = useState<50 | 60>(totalQuestions <= 50 ? 50 : 60);
   const [isGeneratingDownload, setIsGeneratingDownload] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
@@ -653,7 +653,7 @@ export const OfficialOMRSheet: React.FC<OfficialOMRSheetProps> = ({
               value={codeDigits}
               onChange={(e) => setCodeDigits(e.target.value.replace(/\D/g, "").slice(0, 7))}
               className="w-full px-3 py-1.5 font-bold font-mono border border-slate-200 rounded-lg bg-slate-50 text-slate-900"
-              placeholder="1048290"
+              placeholder="1234567"
             />
           </div>
 
@@ -894,7 +894,7 @@ export const OfficialOMRSheet: React.FC<OfficialOMRSheetProps> = ({
                             <div className="flex gap-1.5 font-bold">
                               {["A", "B", "C", "D", "E"].map((opt) => (
                                 <div
-                                  key={opt}
+                                  key={`col1-${qNum}-${opt}`}
                                   className="w-6 h-4 sm:w-6.5 sm:h-4.5 rounded-full border border-slate-700 text-slate-900 text-[9px] font-black flex items-center justify-center bg-white shadow-2xs hover:bg-slate-200 transition-colors cursor-pointer"
                                   style={{ borderRadius: "9999px" }}
                                 >
@@ -914,7 +914,7 @@ export const OfficialOMRSheet: React.FC<OfficialOMRSheetProps> = ({
                         const isGroupEnd = qNum % 5 === 0 && qNum !== sheetQuestionCount;
                         return (
                           <div
-                            key={qNum}
+                            key={`col2-q-${qNum}`}
                             className={`flex items-center justify-between py-1 px-1.5 rounded-sm transition-colors ${
                               isEven ? "bg-slate-100/80" : "bg-white"
                             } ${isGroupEnd ? "border-b border-slate-300 pb-1.5 mb-1" : ""}`}
@@ -925,7 +925,7 @@ export const OfficialOMRSheet: React.FC<OfficialOMRSheetProps> = ({
                             <div className="flex gap-1.5 font-bold">
                               {["A", "B", "C", "D", "E"].map((opt) => (
                                 <div
-                                  key={opt}
+                                  key={`col2-${qNum}-${opt}`}
                                   className="w-6 h-4 sm:w-6.5 sm:h-4.5 rounded-full border border-slate-700 text-slate-900 text-[9px] font-black flex items-center justify-center bg-white shadow-2xs hover:bg-slate-200 transition-colors cursor-pointer"
                                   style={{ borderRadius: "9999px" }}
                                 >

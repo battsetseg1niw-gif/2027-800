@@ -15,6 +15,7 @@ import {
   Tag,
   Wand2,
   RefreshCw,
+  FileUp,
 } from "lucide-react";
 import { Exam, Question, QuestionCategory, ClassRoom, UserProfile } from "../types";
 import { CustomTestBuilder } from "./CustomTestBuilder";
@@ -37,6 +38,7 @@ interface ExamArchiveViewProps {
     timeLimitMinutes: number;
   }) => void;
   onPrintOMR?: (exam: Exam) => void;
+  onOpenPdfDigitalizer?: () => void;
   onUpdateExams?: () => void;
 }
 
@@ -50,6 +52,7 @@ export const ExamArchiveView: React.FC<ExamArchiveViewProps> = ({
   onOpenLearningCenter,
   onAssignToClass,
   onPrintOMR,
+  onOpenPdfDigitalizer,
   onUpdateExams,
 }) => {
   const resolvedTab =
@@ -67,6 +70,11 @@ export const ExamArchiveView: React.FC<ExamArchiveViewProps> = ({
     resolvedTab
   );
 
+  const [selectedYear, setSelectedYear] = useState<string>("all");
+  const [selectedVariant, setSelectedVariant] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
   React.useEffect(() => {
     if (dedicatedView) {
       if (dedicatedView === "past-papers") setActiveTab("exams");
@@ -78,6 +86,7 @@ export const ExamArchiveView: React.FC<ExamArchiveViewProps> = ({
     }
   }, [dedicatedView, initialTab]);
 
+  // If dedicated practice-test view, render PracticeTestView cleanly without hook violations
   if (dedicatedView === "practice-test") {
     return (
       <PracticeTestView
@@ -85,17 +94,13 @@ export const ExamArchiveView: React.FC<ExamArchiveViewProps> = ({
         currentUser={currentUser}
         onStartExam={onStartExam}
         onOpenLearningCenter={onOpenLearningCenter}
+        onUpdateExams={onUpdateExams}
       />
     );
   }
 
-  const [selectedYear, setSelectedYear] = useState<string>("all");
-  const [selectedVariant, setSelectedVariant] = useState<string>("all");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
-
   // Filtered exams for Past Papers
-  const pastPapers = exams.filter((e) => e.type === "past_paper" || !e.type);
+  const pastPapers = (exams || []).filter((e) => e.type === "past_paper" || !e.type);
   const filteredPastPapers = pastPapers.filter((exam) => {
     if (selectedYear !== "all" && exam.year.toString() !== selectedYear) return false;
     if (selectedVariant !== "all" && exam.variant !== selectedVariant) return false;
@@ -107,17 +112,17 @@ export const ExamArchiveView: React.FC<ExamArchiveViewProps> = ({
   });
 
   // Mock tests (Weekly mock archive + current)
-  const mockExams = exams.filter((e) => e.type === "mock");
+  const mockExams = (exams || []).filter((e) => e.type === "mock");
   const latestMock = mockExams[0] || null;
   const previousMocks = mockExams.slice(1);
 
   // Practice tests
-  const practiceExams = exams.filter((e) => e.type === "practice" || e.type === "diagnostic");
+  const practiceExams = (exams || []).filter((e) => e.type === "practice" || e.type === "diagnostic");
 
   // Extract all questions across all exams for Question Bank in Practice Test
   const allQuestions: { question: Question; examTitle: string; examYear: number }[] = [];
-  exams.forEach((ex) => {
-    ex.questions.forEach((q) => {
+  (exams || []).forEach((ex) => {
+    (ex.questions || []).forEach((q) => {
       allQuestions.push({
         question: q,
         examTitle: ex.title,
@@ -180,7 +185,16 @@ export const ExamArchiveView: React.FC<ExamArchiveViewProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {currentUser.role !== "student" && onOpenPdfDigitalizer && (
+                <button
+                  onClick={onOpenPdfDigitalizer}
+                  className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs border border-white/25 transition-all shadow-sm hover:scale-[1.02]"
+                >
+                  <FileUp className="w-4 h-4 text-emerald-300" />
+                  <span>PDF Шалгалт Цахимжуулах</span>
+                </button>
+              )}
               <div className="bg-white/10 backdrop-blur rounded-2xl px-4 py-3 border border-white/10 text-center">
                 <div className="text-[10px] text-slate-300 font-bold uppercase">
                   {dedicatedView === "weekly-mock"
@@ -209,29 +223,53 @@ export const ExamArchiveView: React.FC<ExamArchiveViewProps> = ({
 
       {/* Main Tabs (Only shown when not in dedicated single view mode) */}
       {!dedicatedView && (
-        <div className="flex border-b border-slate-200 gap-6 text-sm font-bold overflow-x-auto">
+        <div className="flex border-b border-slate-200 dark:border-slate-800 gap-3 sm:gap-6 text-xs sm:text-sm font-bold overflow-x-auto pb-0.5">
           <button
             onClick={() => setActiveTab("exams")}
             className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === "exams"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-700 hover:text-slate-800"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
             }`}
           >
-            <Calendar className="w-4 h-4" />
-            <span>ЭЕШ Сан (2006–2026) ({filteredPastPapers.length})</span>
+            <Calendar className="w-4 h-4 text-blue-600" />
+            <span>📘 Өмнөх оны ЭЕШ (2006–2026) ({filteredPastPapers.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab("weekly-mock")}
             className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === "weekly-mock"
-                ? "border-indigo-600 text-indigo-600"
-                : "border-transparent text-slate-700 hover:text-slate-800"
+                ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+                : "border-transparent text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
             }`}
           >
             <Sparkles className="w-4 h-4 text-indigo-600" />
-            <span>7 хоногийн Mock тестүүд ({mockExams.length})</span>
+            <span>⚡ 7 хоногийн Mock шалгалт ({mockExams.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("practice-test")}
+            className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === "practice-test"
+                ? "border-emerald-600 text-emerald-600 dark:text-emerald-400"
+                : "border-transparent text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+            }`}
+          >
+            <Layers className="w-4 h-4 text-emerald-600" />
+            <span>🎯 Дасгал сорилтууд ({practiceExams.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("custom-builder")}
+            className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === "custom-builder"
+                ? "border-purple-600 text-purple-600 dark:text-purple-400"
+                : "border-transparent text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+            }`}
+          >
+            <Wand2 className="w-4 h-4 text-purple-600" />
+            <span>🛠️ Холимог тест зохиох</span>
           </button>
         </div>
       )}

@@ -9,9 +9,19 @@ import { OMRScannerView } from "./components/OMRScannerView";
 import { MistakeNotebookView } from "./components/MistakeNotebookView";
 import { LearningCenterView } from "./components/LearningCenterView";
 import { TeacherQuestionBankManager } from "./components/TeacherQuestionBankManager";
+import { CustomTestBuilder } from "./components/CustomTestBuilder";
+import { AdminSettingsView } from "./components/AdminSettingsView";
 import { PremiumModal } from "./components/PremiumModal";
 import { SqlSchemaModal } from "./components/SqlSchemaModal";
-import { db } from "./lib/supabase";
+import { AuthModal } from "./components/AuthModal";
+import { Language } from "./lib/i18n";
+import {
+  db,
+  supabase,
+  supabaseSignOut,
+  fetchUserProfileFromSupabase,
+  fetchUserSubmissionsFromSupabase,
+} from "./lib/supabase";
 import {
   Role,
   UserProfile,
@@ -24,7 +34,16 @@ import {
   ActivationCode,
   NotificationItem,
   SupportTicket,
+  StudentBadge,
 } from "./types";
+import {
+  signInWithGoogle,
+  signOutUser,
+  onAuthUserChange,
+  syncBadgesToFirestore,
+} from "./lib/firebase";
+import { calculateStudentBadges, computeStudentStats } from "./lib/badgeEngine";
+import { User as FirebaseUser } from "firebase/auth";
 
 export default function App() {
   // Global Database State
@@ -40,6 +59,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [studentBadges, setStudentBadges] = useState<StudentBadge[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -50,6 +71,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
 
+
   // Modals & Active Exam Session
   const [activeExamSession, setActiveExamSession] = useState<{
     exam: Exam;
@@ -57,11 +79,170 @@ export default function App() {
   } | null>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [showSqlModal, setShowSqlModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">("signin");
+
+  // Global Theme State: 'light' | 'dark'
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try {
+      const saved = localStorage.getItem("smartesh_theme");
+      if (saved === "dark" || saved === "light") return saved;
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        return "dark";
+      }
+    } catch {}
+    return "light";
+  });
+
+  useEffect(() => {
+    try {
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+      localStorage.setItem("smartesh_theme", theme);
+    } catch {}
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
+
+  // Global Language State: 'mn' | 'en'
+  const [language, setLanguage] = useState<Language>(() => {
+    try {
+      const saved = localStorage.getItem("smartesh_language") as Language;
+      if (saved === "mn" || saved === "en") return saved;
+    } catch {}
+    return "mn";
+  });
+
+  const handleToggleLanguage = () => {
+    setLanguage((prev) => {
+      const next = prev === "mn" ? "en" : "mn";
+      try {
+        localStorage.setItem("smartesh_language", next);
+      } catch {}
+      return next;
+    });
+  };
 
   // Initialize data from local DB store
   useEffect(() => {
     refreshData();
   }, []);
+
+  // Supabase Auth listener & Session Loader
+  useEffect(() => {
+    let isSubscribed = true;
+
+    const syncSubmissionsForUser = async (userId: string) => {
+      try {
+        const remoteSubs = await fetchUserSubmissionsFromSupabase(userId);
+        if (remoteSubs && remoteSubs.length > 0) {
+          const currentSubs = db.getSubmissions();
+          const existingIds = new Set(currentSubs.map((s) => s.id));
+          const newOnes = remoteSubs.filter((s) => !existingIds.has(s.id));
+          if (newOnes.length > 0) {
+            const merged = [...newOnes, ...currentSubs];
+            db.saveSubmissions(merged);
+            setSubmissions(merged);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed syncing remote submissions:", err);
+      }
+    };
+
+    const checkSession = async () => {
+      if (!supabase) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && isSubscribed) {
+          const profile = await fetchUserProfileFromSupabase(session.user.id, session.user);
+          if (profile && isSubscribed) {
+            setCurrentUser(profile);
+            setActiveRole(profile.role);
+            syncSubmissionsForUser(profile.id);
+          }
+        }
+      } catch (err) {
+        console.warn("Supabase session load error:", err);
+      }
+    };
+
+    checkSession();
+
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user && isSubscribed) {
+          const profile = await fetchUserProfileFromSupabase(session.user.id, session.user);
+          if (profile && isSubscribed) {
+            setCurrentUser(profile);
+            setActiveRole(profile.role);
+            syncSubmissionsForUser(profile.id);
+          }
+        } else if (event === "SIGNED_OUT" && isSubscribed) {
+          setCurrentUser(null);
+          setActiveRole("student");
+        }
+      });
+
+      return () => {
+        isSubscribed = false;
+        subscription.unsubscribe();
+      };
+    }
+  }, []);
+
+  // Compute and persist student milestone badges
+  useEffect(() => {
+    if (!currentUser) return;
+    const computedBadges = calculateStudentBadges(currentUser.id, submissions, mistakes, currentUser);
+    setStudentBadges(computedBadges);
+
+    // Sync to Firestore securely
+    const stats = computeStudentStats(currentUser.id, submissions, mistakes, currentUser);
+    syncBadgesToFirestore(currentUser.id, computedBadges, {
+      totalExams: stats.totalExamsCompleted,
+      topScore: stats.topScaledScore,
+      mistakesFixed: stats.mistakesCorrected,
+    }).catch(() => {});
+  }, [currentUser, submissions, mistakes]);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const user = await signInWithGoogle();
+      if (user) {
+        setFirebaseUser(user);
+      }
+    } catch (err) {
+      console.error("Firebase Google sign in error:", err);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await supabaseSignOut();
+      await signOutUser();
+      setFirebaseUser(null);
+      setCurrentUser(null);
+      setActiveRole("student");
+      setActiveTab("dashboard");
+    } catch (err) {
+      console.error("Supabase sign out error:", err);
+    }
+  };
+
+  const handleAuthSuccess = async (authUser: any) => {
+    setShowAuthModal(false);
+    const profile = await fetchUserProfileFromSupabase(authUser.id, authUser);
+    if (profile) {
+      setCurrentUser(profile);
+      setActiveRole(profile.role);
+    }
+  };
 
   const refreshData = () => {
     const allUsers = db.getUsers();
@@ -75,55 +256,20 @@ export default function App() {
     setActivationCodes(db.getActivationCodes());
     setNotifications(db.getNotifications());
     setSupportTickets(db.getSupportTickets());
-
-    // Set current user based on active role
-    let matched = allUsers.find((u) => u.role === activeRole);
-    if (!matched && activeRole === "admin") {
-      matched = {
-        id: "usr-admin-1",
-        email: "admin@smartesh.mn",
-        name: "SmartESH Админ",
-        role: "admin",
-        school: "SmartESH Төв",
-        grade: "Системийн Ерөнхий Админ",
-        isPremium: true,
-        premiumExpiresAt: "2030-12-31",
-        joinedAt: "2025-01-01",
-      };
-    }
-    setCurrentUser(matched || allUsers[0]);
   };
 
-  // Handle role switch
-  const handleRoleChange = (newRole: Role) => {
-    setActiveRole(newRole);
-    try {
-      localStorage.setItem("smartesh_active_role", newRole);
-    } catch {}
-
-    const allUsers = db.getUsers();
-    let matched = allUsers.find((u) => u.role === newRole);
-    if (!matched && newRole === "admin") {
-      matched = {
-        id: "usr-admin-1",
-        email: "admin@smartesh.mn",
-        name: "SmartESH Админ",
-        role: "admin",
-        school: "SmartESH Төв",
-        grade: "Системийн Ерөнхий Админ",
-        isPremium: true,
-        premiumExpiresAt: "2030-12-31",
-        joinedAt: "2025-01-01",
-      };
-      allUsers.push(matched);
-      db.saveUsers(allUsers);
-      setUsers(allUsers);
-    }
-    if (matched) {
-      setCurrentUser(matched);
-    }
-    setActiveTab("dashboard");
-    setActiveExamSession(null);
+  // Effective user for rendering (authenticated user or student guest)
+  const effectiveUser: UserProfile = currentUser || {
+    id: "guest-user",
+    email: "guest@smartesh.mn",
+    name: "Зочин сурагч",
+    role: "student",
+    studentCode: "000000",
+    school: "SmartESH Цахим платформ",
+    grade: "12-р анги",
+    isPremium: false,
+    joinedAt: new Date().toISOString().slice(0, 10),
+    targetEshScore: 650,
   };
 
   // Student: Start exam
@@ -420,17 +566,15 @@ export default function App() {
     setMistakes(db.getMistakes());
   };
 
-  if (!currentUser) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-semibold">Уншиж байна...</div>;
-  }
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
+    <div
+      className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white transition-colors duration-200"
+      style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+    >
       {/* Navigation Bar */}
       <Navbar
         currentUser={currentUser}
         activeRole={activeRole}
-        onRoleChange={handleRoleChange}
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
@@ -440,6 +584,16 @@ export default function App() {
         onOpenSqlModal={() => setShowSqlModal(true)}
         notifications={notifications}
         onMarkNotificationRead={handleMarkNotificationRead}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        language={language}
+        onToggleLanguage={handleToggleLanguage}
+        onOpenAuthModal={() => {
+          setAuthModalMode("signin");
+          setShowAuthModal(true);
+        }}
+        onSignOut={handleSignOut}
+        badgeCount={studentBadges.filter((b) => b.isUnlocked).length}
       />
 
       {/* Main Content Area */}
@@ -448,30 +602,33 @@ export default function App() {
           <ExamRunner
             exam={activeExamSession.exam}
             mode={activeExamSession.mode}
-            userId={currentUser.id}
-            userName={currentUser.name}
+            userId={effectiveUser.id}
+            userName={effectiveUser.name}
             onFinish={handleFinishExam}
             onExit={() => setActiveExamSession(null)}
           />
         ) : activeTab === "dashboard" ? (
           activeRole === "student" ? (
             <StudentDashboard
-              currentUser={currentUser}
+              currentUser={effectiveUser}
               exams={exams}
               assignments={assignments}
               submissions={submissions}
               mistakes={mistakes}
               classes={classes}
+              badges={studentBadges}
               onStartExam={handleStartExam}
               onOpenMistakes={() => setActiveTab("mistakes")}
               onJoinClass={handleJoinClass}
               onStartWeakTopicPractice={handleStartWeakTopicPractice}
               onOpenLearningCenter={() => setActiveTab("learning-center")}
               onOpenArchive={() => setActiveTab("archive")}
+              onOpenCustomTest={() => setActiveTab("custom-builder")}
             />
+
           ) : activeRole === "teacher" ? (
             <TeacherDashboard
-              currentUser={currentUser}
+              currentUser={effectiveUser}
               classes={classes}
               assignments={assignments}
               exams={exams}
@@ -509,7 +666,7 @@ export default function App() {
         ) : activeTab === "question-bank" ? (
           <TeacherQuestionBankManager
             exams={exams}
-            currentUser={currentUser}
+            currentUser={effectiveUser}
             classes={classes}
             onUpdateExams={() => setExams(db.getExams())}
             onSwitchToStudentView={() => setActiveTab("practice-test")}
@@ -533,17 +690,18 @@ export default function App() {
         ) : activeTab === "archive" || activeTab === "weekly-mock" || activeTab === "practice-test" ? (
           <ExamArchiveView
             exams={exams}
-            currentUser={currentUser}
+            currentUser={effectiveUser}
             classes={classes}
-            dedicatedView={
+            initialTab={
               activeTab === "weekly-mock"
                 ? "weekly-mock"
                 : activeTab === "practice-test"
                 ? "practice-test"
-                : "past-papers"
+                : "exams"
             }
             onStartExam={handleStartExam}
             onOpenLearningCenter={() => setActiveTab("learning-center")}
+            onOpenPdfDigitalizer={() => setActiveTab("omr-scanner")}
             onUpdateExams={() => setExams(db.getExams())}
             onAssignToClass={(assignmentData) => {
               db.addExam(assignmentData.exam);
@@ -563,13 +721,13 @@ export default function App() {
           />
         ) : activeTab === "learning-center" ? (
           <LearningCenterView
-            currentUser={currentUser}
+            currentUser={effectiveUser}
             onOpenPremium={() => setShowPremiumModal(true)}
           />
         ) : activeTab === "omr-scanner" ? (
           <OMRScannerView
             exams={exams}
-            currentUser={currentUser}
+            currentUser={effectiveUser}
             classes={classes}
             users={users}
             onNewSubmission={(sub) => {
@@ -591,20 +749,50 @@ export default function App() {
             onUpdateMastery={handleUpdateMastery}
             onStartRetest={handleStartRetest}
           />
+        ) : activeTab === "custom-builder" ? (
+          <CustomTestBuilder
+            exams={exams}
+            currentUser={effectiveUser}
+            classes={classes}
+            language={language}
+            onStartExam={handleStartExam}
+            onAssignToClass={(assignmentData) => {
+              db.addExam(assignmentData.exam);
+              setExams(db.getExams());
+              handleCreateAssignment(
+                assignmentData.title,
+                assignmentData.classId,
+                assignmentData.exam.id,
+                assignmentData.dueDate,
+                assignmentData.timeLimitMinutes
+              );
+              setActiveTab("dashboard");
+            }}
+            onPrintOMR={() => {
+              setActiveTab("omr-scanner");
+            }}
+          />
+        ) : activeTab === "pricing-settings" ? (
+          <AdminSettingsView
+            onNotify={(title, message) => handleSendNotification(title, message, "all")}
+          />
         ) : null}
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 text-xs text-slate-700">
+      <footer
+        className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-6 text-xs text-slate-700 dark:text-slate-400 transition-colors"
+        style={{ backgroundColor: "var(--footer-bg)", borderColor: "var(--border-color)" }}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-900">SmartESH</span>
+            <span className="font-bold text-slate-900 dark:text-white">SmartESH</span>
             <span>— Монголын Англи хэлний ЭЕШ-д бэлтгэх цахим систем (2006–2026)</span>
           </div>
           <div className="flex items-center gap-4">
             <button
               onClick={() => setShowPremiumModal(true)}
-              className="hover:text-amber-800 font-semibold"
+              className="hover:text-amber-800 dark:hover:text-amber-400 font-semibold transition-colors"
             >
               Багш 40,000₮ / Сурагч 20,000₮ (365 хоног)
             </button>
@@ -614,7 +802,7 @@ export default function App() {
 
       {/* Premium Modal */}
       <PremiumModal
-        currentUser={currentUser}
+        currentUser={currentUser || effectiveUser}
         isOpen={showPremiumModal}
         onClose={() => setShowPremiumModal(false)}
         onRedeemCode={handleRedeemCode}
@@ -624,6 +812,14 @@ export default function App() {
       <SqlSchemaModal
         isOpen={showSqlModal}
         onClose={() => setShowSqlModal(false)}
+      />
+
+      {/* Real Supabase Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={handleAuthSuccess}
+        initialMode={authModalMode}
       />
     </div>
   );

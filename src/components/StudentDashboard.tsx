@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   TrendingUp,
   Target,
@@ -20,9 +20,11 @@ import {
   Layers,
   X,
 } from "lucide-react";
-import { UserProfile, Exam, Assignment, ExamSubmission, MistakeItem, ClassRoom } from "../types";
+import { UserProfile, Exam, Assignment, ExamSubmission, MistakeItem, ClassRoom, StudentBadge } from "../types";
 import { DailyVocabularyWidget } from "./DailyVocabularyWidget";
 import { WeeklyTopStudentsWidget } from "./WeeklyTopStudentsWidget";
+import { StudentMilestoneBadges } from "./StudentMilestoneBadges";
+import { calculateStudentBadges } from "../lib/badgeEngine";
 
 interface StudentDashboardProps {
   currentUser: UserProfile;
@@ -31,12 +33,14 @@ interface StudentDashboardProps {
   submissions: ExamSubmission[];
   mistakes: MistakeItem[];
   classes: ClassRoom[];
+  badges?: StudentBadge[];
   onStartExam: (exam: Exam, mode?: "mock" | "practice" | "diagnostic") => void;
   onOpenMistakes: () => void;
   onJoinClass: (code: string) => boolean;
   onStartWeakTopicPractice: (topicName: string) => void;
   onOpenLearningCenter: () => void;
   onOpenArchive: () => void;
+  onOpenCustomTest?: () => void;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -46,54 +50,82 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   submissions,
   mistakes,
   classes,
+  badges: externalBadges,
   onStartExam,
   onOpenMistakes,
   onJoinClass,
   onStartWeakTopicPractice,
   onOpenLearningCenter,
   onOpenArchive,
+  onOpenCustomTest,
 }) => {
   const [classCodeInput, setClassCodeInput] = useState("");
   const [joinMsg, setJoinMsg] = useState<{ text: string; success: boolean } | null>(null);
   const [selectedAiReportSub, setSelectedAiReportSub] = useState<ExamSubmission | null>(null);
 
-  // Identify latest submission with AI analysis (from OMR scan or digital test)
-  const latestAiSubmission = submissions.find((s) => s.aiAnalysis);
+  // Strictly filter to current student's performance data
+  const mySubmissions = useMemo(
+    () => submissions.filter((s) => s.userId === currentUser.id),
+    [submissions, currentUser.id]
+  );
+  const myMistakes = useMemo(
+    () => mistakes.filter((m) => m.userId === currentUser.id),
+    [mistakes, currentUser.id]
+  );
+
+  // Compute student milestone badges dynamically from real performance
+  const studentBadges = useMemo(() => {
+    if (externalBadges && externalBadges.length > 0) {
+      return externalBadges;
+    }
+    return calculateStudentBadges(currentUser.id, mySubmissions, myMistakes, currentUser);
+  }, [externalBadges, currentUser.id, mySubmissions, myMistakes, currentUser]);
+
+  const unlockedBadgesCount = studentBadges.filter((b) => b.isUnlocked).length;
+
+  // Identify latest submission with AI analysis for current student
+  const latestAiSubmission = mySubmissions.find((s) => s.aiAnalysis);
 
   // Calculate student metrics from real submissions
-  const totalSubmissions = submissions.length;
-  const latestSubmission = submissions[0];
-  const averageScaledScore =
-    submissions.length > 0
-      ? Math.round(submissions.reduce((acc, curr) => acc + curr.scaledScore, 0) / submissions.length)
-      : 580;
+  const totalSubmissions = mySubmissions.length;
+  const hasSubmissions = totalSubmissions > 0;
+  const averageScaledScore = hasSubmissions
+    ? Math.round(mySubmissions.reduce((acc, curr) => acc + curr.scaledScore, 0) / totalSubmissions)
+    : 0;
 
   const targetScore = currentUser.targetEshScore || 720;
   const scoreGap = targetScore - averageScaledScore;
 
-  // Identify weak topics from mistakes
+  // Real display name: use profile name or email prefix, never mock names
+  const emailPrefix = (currentUser.email || "").split("@")[0] || "";
+  const studentDisplayName =
+    currentUser.name &&
+    currentUser.name.trim() &&
+    currentUser.name !== "Хэрэглэгч" &&
+    currentUser.name !== "Google Хэрэглэгч" &&
+    currentUser.name !== "Зочин сурагч"
+      ? currentUser.name.trim()
+      : (emailPrefix || "Сурагч");
+
+  const studentDisplayCode =
+    currentUser.studentCode && currentUser.studentCode !== "104829"
+      ? currentUser.studentCode
+      : (currentUser.id ? currentUser.id.slice(0, 6).toUpperCase() : "000000");
+
+  // Identify weak topics from real mistakes
   const topicCounts: Record<string, { count: number; category: string }> = {};
-  mistakes.forEach((m) => {
-    const key = m.question.topic || "General Grammar";
+  myMistakes.forEach((m) => {
+    const key = m.question?.topic || "General Grammar";
     if (!topicCounts[key]) {
-      topicCounts[key] = { count: 0, category: m.question.category };
+      topicCounts[key] = { count: 0, category: m.question?.category || "Grammar" };
     }
     topicCounts[key].count += 1;
   });
 
   const weakTopics = Object.entries(topicCounts)
     .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 3);
-
-  // If no mistakes yet, provide guided default weak topics to work on
-  const displayWeakTopics =
-    weakTopics.length > 0
-      ? weakTopics.map(([topic, data]) => ({ topic, category: data.category, count: data.count }))
-      : [
-          { topic: "Third Conditionals", category: "Grammar", count: 3 },
-          { topic: "Phrasal Verbs with Turn & Put", category: "Vocabulary", count: 2 },
-          { topic: "Polite Request Responses", category: "Communication", count: 2 },
-        ];
+    .slice(0, 3)
+    .map(([topic, data]) => ({ topic, category: data.category, count: data.count }));
 
   const handleJoinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,11 +157,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
               <span className="text-white/40">•</span>
               <span className="text-amber-200">
-                Сурагчийн код: <strong className="font-mono text-white bg-amber-500/30 px-2 py-0.5 rounded border border-amber-400/40 text-xs">{currentUser.studentCode || "104829"}</strong>
+                Сурагчийн код: <strong className="font-mono text-white bg-amber-500/30 px-2 py-0.5 rounded border border-amber-400/40 text-xs">{studentDisplayCode}</strong>
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Сайн байна уу, {currentUser.name}?
+              Сайн байна уу, {studentDisplayName}?
             </h1>
             <p className="text-slate-300 text-sm leading-relaxed">
               Англи хэлний ЭЕШ-д бэлтгэх бодит сорилтуудаа ажиллаж, алдаагаа Smart Feedback болон AI заавраар засаарай.
@@ -158,38 +190,90 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <span>2026 Mock Test эхлэх</span>
               </button>
             )}
+
+            {onOpenCustomTest && (
+              <button
+                id="btn-start-custom-mixed"
+                onClick={onOpenCustomTest}
+                className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-lg shadow-purple-600/30 flex items-center gap-2 transition-all transform hover:-translate-y-0.5"
+              >
+                <Layers className="w-4 h-4 text-purple-200" />
+                <span>Холимог тест үүсгэх</span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* Quick Diagnostic Study Plan Progress */}
-        <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Дундаж оноо</div>
-            <div className="text-2xl font-extrabold text-blue-300 mt-1">{averageScaledScore} / 800</div>
-            <div className="text-[10px] text-slate-400 mt-1">Сүүлийн шалгалтуудаас</div>
+            <div className="text-2xl font-extrabold text-blue-300 mt-1">
+              {hasSubmissions ? `${averageScaledScore} / 800` : "0 / 800"}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1">
+              {hasSubmissions ? "Сүүлийн шалгалтуудаас" : "Шалгалт өгөөгүй"}
+            </div>
           </div>
 
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Зорилтот оноо</div>
             <div className="text-2xl font-extrabold text-emerald-300 mt-1">{targetScore}</div>
             <div className="text-[10px] text-emerald-400 mt-1">
-              {scoreGap > 0 ? `${scoreGap} онооны зөрүүтэй` : "Зорилтодоо хүрсэн!"}
+              {hasSubmissions
+                ? (scoreGap > 0 ? `${scoreGap} онооны зөрүүтэй` : "Зорилтодоо хүрсэн!")
+                : "Хүрэх ЭЕШ оноо"}
             </div>
           </div>
 
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Шалгалт өгсөн</div>
             <div className="text-2xl font-extrabold text-amber-300 mt-1">{totalSubmissions} удаа</div>
-            <div className="text-[10px] text-slate-400 mt-1">Цаасан + Дижитал нийлээд</div>
+            <div className="text-[10px] text-slate-400 mt-1">
+              {hasSubmissions ? "Цаасан + Дижитал нийлээд" : "Одоогоор өгөөгүй"}
+            </div>
           </div>
 
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Алдааны тэмдэглэл</div>
-            <div className="text-2xl font-extrabold text-rose-300 mt-1">{mistakes.length} асуулт</div>
-            <div className="text-[10px] text-rose-400 mt-1">Бататгах шаардлагатай</div>
+            <div className="text-2xl font-extrabold text-rose-300 mt-1">{myMistakes.length} асуулт</div>
+            <div className="text-[10px] text-rose-400 mt-1">
+              {myMistakes.length > 0 ? "Бататгах шаардлагатай" : "Алдаа байхгүй"}
+            </div>
+          </div>
+
+          <div
+            onClick={() => {
+              const el = document.getElementById("student-milestone-badges-section");
+              if (el) el.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="bg-white/5 hover:bg-white/10 transition-colors cursor-pointer rounded-2xl p-4 border border-amber-400/30 group"
+          >
+            <div className="text-[11px] text-amber-200 font-medium flex items-center justify-between">
+              <span>Амжилтын тэмдэгт</span>
+              <Award className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="text-2xl font-extrabold text-amber-400 mt-1">
+              {unlockedBadgesCount} <span className="text-xs text-amber-200/80 font-normal">/ {studentBadges.length}</span>
+            </div>
+            <div className="text-[10px] text-amber-300 mt-1 flex items-center gap-1">
+              <span>Зорилтууд үзэх</span>
+              <ChevronRight className="w-3 h-3" />
+            </div>
           </div>
         </div>
       </div>
+
+      {/* STUDENT MILESTONE BADGES SYSTEM */}
+      <div id="student-milestone-badges-section">
+        <StudentMilestoneBadges
+          badges={studentBadges}
+          onOpenExamList={onOpenArchive}
+          onOpenMistakes={onOpenMistakes}
+          onOpenLearningCenter={onOpenLearningCenter}
+        />
+      </div>
+
 
       {/* AI Analysis & Topic Recommendations Card */}
       {latestAiSubmission && latestAiSubmission.aiAnalysis && (
@@ -416,44 +500,69 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   Сул сэдвийг тодорхойлох & Smart Practice
                 </h3>
               </div>
-              <button
-                onClick={onOpenMistakes}
-                className="text-xs font-bold text-amber-800 hover:underline flex items-center gap-1"
-              >
-                <span>Алдааны дэвтэр</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              {myMistakes.length > 0 && (
+                <button
+                  onClick={onOpenMistakes}
+                  className="text-xs font-bold text-amber-800 hover:underline flex items-center gap-1"
+                >
+                  <span>Алдааны дэвтэр</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
             <p className="text-xs text-slate-800">
-              Таны хийсэн шалгалтууд дээрх буруу хариултуудад дүн шинжилгээ хийж, хамгийн их алдсан сэдвүүдийг тодорхойллоо.
+              Таны хийсэн шалгалтууд дээрх буруу хариултуудад дүн шинжилгээ хийж, хамгийн их алдсан сэдвүүдийг тодорхойлно.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {displayWeakTopics.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="bg-white rounded-xl p-3.5 border border-amber-200/60 shadow-xs flex flex-col justify-between"
-                >
-                  <div>
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
-                      {item.category}
-                    </span>
-                    <h4 className="text-xs font-bold text-slate-900 mt-2 line-clamp-2">
-                      {item.topic}
-                    </h4>
-                    <p className="text-[11px] text-rose-700 mt-1 font-medium">{item.count} алдаа бүртгэгдсэн</p>
-                  </div>
-
-                  <button
-                    onClick={() => onStartWeakTopicPractice(item.topic)}
-                    className="mt-3 w-full py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>Smart Practice</span>
-                  </button>
+            {weakTopics.length === 0 ? (
+              <div className="bg-white/90 rounded-2xl p-6 border border-amber-200/60 text-center space-y-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
                 </div>
-              ))}
-            </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900">Одоогоор алдаа бүртгэгдээгүй байна</h4>
+                  <p className="text-[11px] text-slate-600 max-w-sm mx-auto mt-1 leading-relaxed">
+                    Та Англи хэлний ЭЕШ-ийн сорилт ажиллаж эхэлснээр таны алдсан асуултуудад систем дүн шинжилгээ хийж, сул сэдвүүдийг автоматаар энд ялгаж өгнө.
+                  </p>
+                </div>
+                {diagnosticExam && (
+                  <button
+                    onClick={() => onStartExam(diagnosticExam, "diagnostic")}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-xs"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Эхний сорилтоо ажиллах</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {weakTopics.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-white rounded-xl p-3.5 border border-amber-200/60 shadow-xs flex flex-col justify-between"
+                  >
+                    <div>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
+                        {item.category}
+                      </span>
+                      <h4 className="text-xs font-bold text-slate-900 mt-2 line-clamp-2">
+                        {item.topic}
+                      </h4>
+                      <p className="text-[11px] text-rose-700 mt-1 font-medium">{item.count} алдаа бүртгэгдсэн</p>
+                    </div>
+
+                    <button
+                      onClick={() => onStartWeakTopicPractice(item.topic)}
+                      className="mt-3 w-full py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Smart Practice</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -504,36 +613,44 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                 Миний ангиуд ({classes.length})
               </div>
-              <div className="space-y-1.5">
-                {classes.map((cls) => (
-                  <div key={cls.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
-                    <div className="font-bold text-slate-900">{cls.name}</div>
-                    <div className="text-[11px] text-slate-700 flex items-center justify-between mt-1">
-                      <span>{cls.teacherName}</span>
-                      <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                        {cls.code}
-                      </span>
+              {classes.length === 0 ? (
+                <div className="p-3 text-center rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-500">
+                  Одоогоор нэгдсэн анги байхгүй байна. Багшаас өгсөн кодыг оруулан ангидаа нэгдээрэй.
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {classes.map((cls) => (
+                    <div key={cls.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                      <div className="font-bold text-slate-900">{cls.name}</div>
+                      <div className="text-[11px] text-slate-700 flex items-center justify-between mt-1">
+                        <span>{cls.teacherName}</span>
+                        <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          {cls.code}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
           {/* Custom Mixed Test Builder Shortcut */}
-          <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-5 border border-indigo-200 shadow-xs space-y-3">
+          <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/40 rounded-2xl p-5 border border-indigo-200 dark:border-indigo-800/80 shadow-xs space-y-3">
             <div className="flex items-center gap-2">
-              <Layers className="w-5 h-5 text-indigo-600" />
-              <h3 className="text-sm font-bold text-slate-900">Онууд & Сэдвээр тест холих</h3>
+              <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Өмнөх онуудаар тест холих</h3>
             </div>
-            <p className="text-xs text-slate-800 leading-relaxed">
-              2006–2026 онуудыг хооронд нь хольж, дуртай дүрмийн сэдвээр хүссэн тооны асуулттай хувийн тестээ үүсгэн ажиллаарай.
+            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+              2006–2026 онуудын өмнөх шалгалтын асуултуудыг өөртөө тохируулан хольж, сонгосон сэдвүүдээрээ хувийн тест үүсгэн ажиллаарай.
             </p>
             <button
-              onClick={onOpenArchive}
+              id="student-dash-custom-builder-btn"
+              onClick={onOpenCustomTest || onOpenArchive}
               className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm"
             >
-              <span>Тест үүсгэгч рүү очих</span>
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>Холимог тест үүсгэгч рүү очих</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -577,8 +694,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </button>
         </div>
 
-        {submissions.length === 0 ? (
-          <div className="text-center py-8 text-xs text-slate-700">Одоогоор өгсөн шалгалт байхгүй байна.</div>
+        {mySubmissions.length === 0 ? (
+          <div className="text-center py-8 text-xs text-slate-700">Одоогоор өгсөн шалгалт байхгүй байна. Дээрх сорилтуудаас сонгон эхлүүлнэ үү.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -594,7 +711,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {submissions.map((sub) => (
+                {mySubmissions.map((sub) => (
                   <tr key={sub.id} className="hover:bg-slate-50/80">
                     <td className="py-3 font-semibold text-slate-900">{sub.examTitle}</td>
                     <td className="py-3">

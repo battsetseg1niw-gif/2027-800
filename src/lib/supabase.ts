@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import {
+  Role,
   UserProfile,
   Exam,
   Question,
@@ -255,69 +256,15 @@ export class LocalDatabaseStore {
   static getUsers(): UserProfile[] {
     const defaultUsers: UserProfile[] = [
       {
-        id: "usr-student-1",
-        email: "student@smartesh.mn",
-        name: "Баярсайхан Т.",
-        role: "student",
-        studentCode: "104829",
-        school: "1-р лаборатори сургууль",
-        grade: "12-р анги",
-        classCodes: ["ESH-8842"],
-        isPremium: false,
-        joinedAt: "2026-01-15",
-        targetEshScore: 720,
-      },
-      {
-        id: "usr-student-2",
-        email: "anudari@smartesh.mn",
-        name: "Анударь М.",
-        role: "student",
-        studentCode: "104830",
-        school: "1-р лаборатори сургууль",
-        grade: "12-р анги",
-        classCodes: ["ESH-8842"],
+        id: "usr-admin-1",
+        email: "battsetsegb615@gmail.com",
+        name: "Батцэцэг (Super Admin)",
+        role: "admin",
+        school: "SmartESH Төв",
+        grade: "Системийн Ерөнхий Админ (Эзэмшигч)",
         isPremium: true,
-        joinedAt: "2026-01-20",
-        targetEshScore: 780,
-      },
-      {
-        id: "usr-student-3",
-        email: "temuulen@smartesh.mn",
-        name: "Тэмүүлэн Б.",
-        role: "student",
-        studentCode: "104831",
-        school: "1-р лаборатори сургууль",
-        grade: "12-р анги",
-        classCodes: ["ESH-8842"],
-        isPremium: true,
-        joinedAt: "2026-01-25",
-        targetEshScore: 740,
-      },
-      {
-        id: "usr-student-4",
-        email: "enkhjin@smartesh.mn",
-        name: "Энхжин С.",
-        role: "student",
-        studentCode: "104832",
-        school: "1-р лаборатори сургууль",
-        grade: "12-р анги",
-        classCodes: ["ESH-8842"],
-        isPremium: false,
-        joinedAt: "2026-02-01",
-        targetEshScore: 690,
-      },
-      {
-        id: "usr-student-5",
-        email: "khuslen@smartesh.mn",
-        name: "Хүслэн Д.",
-        role: "student",
-        studentCode: "104833",
-        school: "1-р лаборатори сургууль",
-        grade: "12-р анги",
-        classCodes: ["ESH-8842"],
-        isPremium: false,
-        joinedAt: "2026-02-05",
-        targetEshScore: 710,
+        premiumExpiresAt: "2030-12-31",
+        joinedAt: "2025-01-01",
       },
       {
         id: "usr-teacher-1",
@@ -331,42 +278,32 @@ export class LocalDatabaseStore {
         premiumExpiresAt: "2027-02-01",
         joinedAt: "2025-09-01",
       },
-      {
-        id: "usr-admin-1",
-        email: "battsetsegb615@gmail.com",
-        name: "Батцэцэг (Super Admin)",
-        role: "admin",
-        school: "SmartESH Төв",
-        grade: "Системийн Ерөнхий Админ (Эзэмшигч)",
-        isPremium: true,
-        premiumExpiresAt: "2030-12-31",
-        joinedAt: "2025-01-01",
-      },
     ];
     const stored = this.getItem<UserProfile[]>("users", defaultUsers);
-    // Guarantee admin and teacher roles always exist in the store, and ensure super admin email is matched
+    // Guarantee admin and teacher roles always exist in the store, and filter out old mock students
+    const filtered = stored.filter(
+      (u) => !u.id.startsWith("usr-student-")
+    );
     let modified = false;
-    const adminIndex = stored.findIndex((u) => u.role === "admin");
-    if (adminIndex >= 0) {
-      if (stored[adminIndex].email !== "battsetsegb615@gmail.com") {
-        stored[adminIndex].email = "battsetsegb615@gmail.com";
-        stored[adminIndex].name = "Батцэцэг (Super Admin)";
-        modified = true;
-      }
+    const adminIndex = filtered.findIndex((u) => u.role === "admin");
+    if (adminIndex === -1) {
+      filtered.unshift(defaultUsers[0]);
+      modified = true;
     } else {
-      stored.push(defaultUsers[2]);
+      filtered[adminIndex].isPremium = true;
+      if (filtered[adminIndex].email?.trim().toLowerCase() === "battsetsegb615@gmail.com") {
+        filtered[adminIndex].role = "admin";
+      }
+    }
+    const teacherIndex = filtered.findIndex((u) => u.role === "teacher");
+    if (teacherIndex === -1) {
+      filtered.push(defaultUsers[1]);
       modified = true;
     }
-    defaultUsers.forEach((def) => {
-      if (!stored.some((u) => u.id === def.id || (u.role === def.role && def.role === "admin"))) {
-        stored.push(def);
-        modified = true;
-      }
-    });
-    if (modified) {
-      this.setItem("users", stored);
+    if (modified || filtered.length !== stored.length) {
+      this.saveUsers(filtered);
     }
-    return stored;
+    return filtered;
   }
 
   static saveUsers(users: UserProfile[]) {
@@ -385,29 +322,13 @@ export class LocalDatabaseStore {
 
   // Classes
   static getClasses(): ClassRoom[] {
-    const defaultClasses: ClassRoom[] = [
-      {
-        id: "cls-1",
-        name: "12А Анги - ЭЕШ 800 Бүлэг",
-        code: "ESH-8842",
-        teacherId: "usr-teacher-1",
-        teacherName: "Оюунцэцэг Багш",
-        description: "2026 оны ЭЕШ-д 700+ оноо зорилтот эрчимжүүлсэн анги",
-        studentIds: ["usr-student-1", "usr-student-2", "usr-student-3"],
-        createdAt: "2026-02-01",
-      },
-      {
-        id: "cls-2",
-        name: "12Б Анги - Дүрмийн эрчимжүүлсэн анги",
-        code: "ESH-5519",
-        teacherId: "usr-teacher-1",
-        teacherName: "Оюунцэцэг Багш",
-        description: "Grammar & Vocabulary суурийг бэхжүүлэх тусгай бүлэг",
-        studentIds: ["usr-student-1"],
-        createdAt: "2026-02-15",
-      },
-    ];
-    return this.getItem<ClassRoom[]>("classes", defaultClasses);
+    const stored = this.getItem<ClassRoom[]>("classes", []);
+    // Filter out old mock classes
+    const filtered = stored.filter((c) => c.id !== "cls-1" && c.id !== "cls-2");
+    if (filtered.length !== stored.length) {
+      this.saveClasses(filtered);
+    }
+    return filtered;
   }
 
   static saveClasses(classes: ClassRoom[]) {
@@ -416,35 +337,13 @@ export class LocalDatabaseStore {
 
   // Assignments
   static getAssignments(): Assignment[] {
-    const defaultAssignments: Assignment[] = [
-      {
-        id: "asg-1",
-        title: "2024 оны ЭЕШ - Хувилбар A (Бүрэн тест)",
-        classId: "cls-1",
-        className: "12А Анги - ЭЕШ 800 Бүлэг",
-        teacherId: "usr-teacher-1",
-        examId: "esh-2024-a",
-        examTitle: "ЭЕШ 2024 - Хувилбар A (Албан ёсны)",
-        dueDate: "2026-09-30",
-        timeLimitMinutes: 80,
-        assignedStudentIds: [],
-        createdAt: "2026-03-01",
-      },
-      {
-        id: "asg-2",
-        title: "Grammar Mastery: Conditionals & Tenses",
-        classId: "cls-1",
-        className: "12А Анги - ЭЕШ 800 Бүлэг",
-        teacherId: "usr-teacher-1",
-        examId: "esh-mock-2026-1",
-        examTitle: "SmartESH Mock Test 2026 #1",
-        dueDate: "2026-10-15",
-        timeLimitMinutes: 40,
-        assignedStudentIds: [],
-        createdAt: "2026-03-05",
-      },
-    ];
-    return this.getItem<Assignment[]>("assignments", defaultAssignments);
+    const stored = this.getItem<Assignment[]>("assignments", []);
+    // Filter out old mock assignments
+    const filtered = stored.filter((a) => a.id !== "asg-1" && a.id !== "asg-2");
+    if (filtered.length !== stored.length) {
+      this.saveAssignments(filtered);
+    }
+    return filtered;
   }
 
   static saveAssignments(assignments: Assignment[]) {
@@ -453,83 +352,15 @@ export class LocalDatabaseStore {
 
   // Submissions
   static getSubmissions(): ExamSubmission[] {
-    const defaultSubmissions: ExamSubmission[] = [
-      {
-        id: "sub-1",
-        examId: "esh-2024-a",
-        examTitle: "ЭЕШ 2024 - Хувилбар A (Албан ёсны)",
-        examType: "past_paper",
-        userId: "usr-student-1",
-        userName: "Баярсайхан Т.",
-        source: "digital",
-        answers: { 1: "B", 2: "C", 3: "A", 4: "B", 5: "B" },
-        rawScore: 42,
-        percentage: 84,
-        scaledScore: 685,
-        timeSpentSeconds: 3840,
-        categoryScores: {
-          Grammar: { correct: 18, total: 20 },
-          Vocabulary: { correct: 12, total: 15 },
-          Communication: { correct: 5, total: 5 },
-          Reading: { correct: 7, total: 10 },
-        },
-        wrongQuestionIds: ["q-vocab-4", "q-read-8"],
-        submittedAt: "2026-03-10T14:30:00Z",
-      },
-      {
-        id: "sub-omr-1",
-        examId: "esh-2023-a",
-        examTitle: "ЭЕШ 2023 - Хувилбар A",
-        examType: "past_paper",
-        userId: "usr-student-1",
-        userName: "Баярсайхан Т.",
-        studentCode: "104829",
-        studentRegNo: "104829",
-        source: "omr_paper",
-        answers: { 1: "A", 2: "B", 3: "D" },
-        rawScore: 39,
-        percentage: 78,
-        scaledScore: 640,
-        timeSpentSeconds: 4800,
-        categoryScores: {
-          Grammar: { correct: 16, total: 20 },
-          Vocabulary: { correct: 11, total: 15 },
-          Communication: { correct: 4, total: 5 },
-          Reading: { correct: 8, total: 10 },
-        },
-        wrongQuestionIds: ["q-grammar-3"],
-        submittedAt: "2026-03-12T10:15:00Z",
-        reviewedByTeacher: true,
-        aiAnalysis: {
-          summary: "Сурагч Баярсайхан Т. цаасан OMR шалгалтаар 50 асуултаас 39 зөв хариулж, ЭЕШ-ийн 640 хуваарьт оноо авлаа. Эх унших чадвар болон харилцан ярианы хэсгүүдэд маш сайн гүйцэтгэл үзүүлсэн боловч дүрмийн хэсэгт 'Conditionals (Нөхцөлт өгүүлбэр)' болон 'Past Perfect' сэдвүүд дээр эргэлзэж алдсан байна.",
-          strengths: [
-            "Reading Comprehension эхийн гол агуулга ба зохиогчийн санааг 80% зөв тодорхойлсон",
-            "Communication хэсгийн өдөр тутмын болон албаны харилцааны хэллэгийг 100% зөв сонгосон",
-          ],
-          weaknesses: [
-            "Conditionals дүрэм дээр If + had + V3 бүтцийг Would + V1-тэй хольж андуурсан",
-            "Phrasal Verbs-ийн салаа утгуудыг контекстоос ялгахад анхаарах шаардлагатай",
-          ],
-          recommendedTopics: [
-            {
-              topic: "Conditionals (Нөхцөлт өгүүлбэр)",
-              subtopic: "Type 2 & Type 3 ялгаа",
-              priority: "High",
-              reason: "Шалгалтын 2 ба 12-р асуултууд дээр хоёуланд нь алдсан. Дүрмийн бүтцээ дахин бататгах шаардлагатай.",
-              suggestedAction: "Learning Center-ийн 'Conditionals' хичээлийг үзэж, 15 тестийг ажиллах.",
-            },
-            {
-              topic: "Phrasal Verbs (Хэллэг үйл үг)",
-              subtopic: "Turn down / Turn up / Look forward to",
-              priority: "Medium",
-              reason: "Үгийн баялгийн хэсэгт 1 асуулт дээр эргэлзэж алдсан.",
-              suggestedAction: "ЭЕШ-д хамгийн их давтагддаг 30 хэллэг үйл үгийг бататгах.",
-            },
-          ],
-        },
-      },
-    ];
-    return this.getItem<ExamSubmission[]>("submissions", defaultSubmissions);
+    const list = this.getItem<ExamSubmission[]>("submissions", []);
+    // Remove legacy fake mock submissions from any previous seeds
+    const filtered = list.filter(
+      (s) => s.id !== "sub-1" && s.id !== "sub-omr-1" && s.userId !== "usr-student-1"
+    );
+    if (filtered.length !== list.length) {
+      this.saveSubmissions(filtered);
+    }
+    return filtered;
   }
 
   static saveSubmissions(subs: ExamSubmission[]) {
@@ -538,7 +369,12 @@ export class LocalDatabaseStore {
 
   // Mistakes
   static getMistakes(): MistakeItem[] {
-    return this.getItem<MistakeItem[]>("mistakes", []);
+    const list = this.getItem<MistakeItem[]>("mistakes", []);
+    const filtered = list.filter((m) => m.userId !== "usr-student-1");
+    if (filtered.length !== list.length) {
+      this.saveMistakes(filtered);
+    }
+    return filtered;
   }
 
   static saveMistakes(mistakes: MistakeItem[]) {
@@ -601,8 +437,8 @@ export class LocalDatabaseStore {
       },
       {
         id: "notif-2",
-        title: "Багш даалгавар өглөө",
-        message: "Оюунцэцэг багш 12А ангид '2024 оны ЭЕШ - Хувилбар A' даалгаврыг 9-р сарын 30-ны хугацаатай өглөө.",
+        title: "Шинэ сорилт хуваарилагдлаа",
+        message: "Багшийн даалгавар хэсэгт 2024 оны ЭЕШ-ийн сорилт нэмэгдсэн байна.",
         targetRole: "student",
         createdAt: "2026-03-14",
         read: false,
@@ -625,21 +461,13 @@ export class LocalDatabaseStore {
 
   // Support Tickets
   static getSupportTickets(): SupportTicket[] {
-    const defaultTickets: SupportTicket[] = [
-      {
-        id: "tkt-1",
-        userId: "usr-student-1",
-        userName: "Баярсайхан Т.",
-        userEmail: "student@smartesh.mn",
-        subject: "QPay төлбөр шалгах хүсэлт",
-        message: "Би QPay-ээр 20,000₮ шилжүүлсэн, баримтын дугаар #88412. Идэвхжүүлэх кодоо авъя.",
-        category: "payment",
-        status: "resolved",
-        createdAt: "2026-03-10",
-        reply: "Таны төлбөр баталгаажлаа. Таны идэвхжүүлэх код: ESH-STU-8812. Амжилт хүсье!",
-      },
-    ];
-    return this.getItem<SupportTicket[]>("support_tickets", defaultTickets);
+    const defaultTickets: SupportTicket[] = [];
+    const list = this.getItem<SupportTicket[]>("support_tickets", defaultTickets);
+    const filtered = list.filter((t) => t.userId !== "usr-student-1");
+    if (filtered.length !== list.length) {
+      this.saveSupportTickets(filtered);
+    }
+    return filtered;
   }
 
   static saveSupportTickets(tickets: SupportTicket[]) {
@@ -910,9 +738,19 @@ export const db = {
   // Submissions
   getSubmissions: (): ExamSubmission[] => LocalDatabaseStore.getSubmissions(),
 
+  saveSubmissions: (subs: ExamSubmission[]): void => {
+    LocalDatabaseStore.saveSubmissions(subs);
+  },
+
   saveSubmission: (sub: ExamSubmission): void => {
     const subs = LocalDatabaseStore.getSubmissions();
-    LocalDatabaseStore.saveSubmissions([sub, ...subs]);
+    const updated = [sub, ...subs.filter((s) => s.id !== sub.id)];
+    LocalDatabaseStore.saveSubmissions(updated);
+    if (supabase) {
+      saveSubmissionToSupabase(sub).catch((err) =>
+        console.warn("Background sync submission to Supabase error:", err)
+      );
+    }
   },
 
   // Mistakes
@@ -930,12 +768,14 @@ export const db = {
       (m) => m.userId === data.userId && m.question.id === data.question.id
     );
 
+    let targetItem: MistakeItem;
     if (existingIdx >= 0) {
       list[existingIdx].mistakeCount = (list[existingIdx].mistakeCount || 1) + 1;
       list[existingIdx].userLastAnswer = data.userLastAnswer;
       list[existingIdx].date = new Date().toISOString().slice(0, 10);
+      targetItem = list[existingIdx];
     } else {
-      list.unshift({
+      targetItem = {
         id: `mis-${Date.now()}-${Math.random().toString(36).substring(7)}`,
         userId: data.userId,
         questionId: data.question.id,
@@ -950,9 +790,15 @@ export const db = {
         resolved: false,
         mistakeCount: 1,
         masteryLevel: "learning",
-      });
+      };
+      list.unshift(targetItem);
     }
     LocalDatabaseStore.saveMistakes(list);
+    if (supabase) {
+      saveMistakeToSupabase(targetItem).catch((err) =>
+        console.warn("Background sync mistake to Supabase error:", err)
+      );
+    }
   },
 
   removeMistake: (id: string): void => {
@@ -1137,3 +983,321 @@ export const db = {
     LocalDatabaseStore.saveMasteredQuestionIds(userId, []);
   },
 };
+
+// ==========================================
+// REAL SUPABASE AUTH & PROFILES INTEGRATION
+// ==========================================
+
+export async function supabaseSignUp({
+  email,
+  password,
+  name,
+  role,
+  school,
+  grade,
+}: {
+  email: string;
+  password?: string;
+  name: string;
+  role: Role;
+  school?: string;
+  grade?: string;
+}) {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+  const isSuperAdminEmail = email.trim().toLowerCase() === "battsetsegb615@gmail.com";
+  const userRole = isSuperAdminEmail ? "admin" : role;
+
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password: password || "SmartESH2026!",
+    options: {
+      data: {
+        name,
+        role: userRole,
+        school: school || "",
+        grade: grade || "",
+      },
+    },
+  });
+  if (error) throw error;
+
+  if (data.user) {
+    try {
+      await supabase.from("profiles").upsert({
+        id: data.user.id,
+        email: email.trim(),
+        name,
+        role: userRole,
+        school: school || "",
+        grade: grade || "",
+        is_premium: userRole === "admin",
+        target_esh_score: 650,
+      });
+    } catch (e) {
+      console.warn("Profile table insert notice:", e);
+    }
+  }
+  return data;
+}
+
+export async function supabaseSignIn(email: string, password: string) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function supabaseSignInWithGoogle() {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin,
+    },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function supabaseSignOut() {
+  if (!supabase) return;
+  await supabase.auth.signOut();
+}
+
+export async function fetchUserProfileFromSupabase(
+  userId: string,
+  authUser?: any
+): Promise<UserProfile | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Supabase profile fetch error:", error.message);
+    }
+
+    if (data) {
+      const userEmail = (data.email || authUser?.email || "").trim();
+      const isSuperAdminEmail =
+        userEmail.toLowerCase() === "battsetsegb615@gmail.com";
+      const actualRole: Role = isSuperAdminEmail
+        ? "admin"
+        : (data.role as Role) || "student";
+
+      // Display real name from profiles/auth metadata, or email prefix if not configured
+      const emailPrefix = userEmail.split("@")[0] || "";
+      const rawName = (data.name || authUser?.user_metadata?.name || authUser?.user_metadata?.full_name || "").trim();
+      const cleanName =
+        rawName && rawName !== "Хэрэглэгч" && rawName !== "Google Хэрэглэгч"
+          ? rawName
+          : (emailPrefix || "Сурагч");
+
+      const profile: UserProfile = {
+        id: data.id,
+        email: userEmail,
+        name: cleanName,
+        role: actualRole,
+        studentCode:
+          data.student_code ||
+          data.id.slice(0, 6).toUpperCase(),
+        school: data.school || "",
+        grade: data.grade || "",
+        isPremium: Boolean(data.is_premium || actualRole === "admin"),
+        premiumExpiresAt: data.premium_expires_at,
+        targetEshScore: data.target_esh_score || 720,
+        joinedAt:
+          data.created_at?.slice(0, 10) ||
+          new Date().toISOString().slice(0, 10),
+      };
+      return profile;
+    }
+
+    // Auto-provision profile from auth user metadata if row doesn't exist yet
+    if (authUser) {
+      const userEmail = (authUser.email || "").trim();
+      const isSuperAdminEmail =
+        userEmail.toLowerCase() === "battsetsegb615@gmail.com";
+      const userRole: Role = isSuperAdminEmail
+        ? "admin"
+        : (authUser.user_metadata?.role as Role) || "student";
+
+      const emailPrefix = userEmail.split("@")[0] || "";
+      const rawName = (
+        authUser.user_metadata?.name ||
+        authUser.user_metadata?.full_name ||
+        ""
+      ).trim();
+      const cleanName =
+        rawName && rawName !== "Хэрэглэгч"
+          ? rawName
+          : (emailPrefix || "Сурагч");
+
+      const studentCode = authUser.id ? authUser.id.slice(0, 6).toUpperCase() : Math.floor(100000 + Math.random() * 900000).toString();
+
+      const newProfile: UserProfile = {
+        id: authUser.id,
+        email: userEmail,
+        name: cleanName,
+        role: userRole,
+        studentCode,
+        school: authUser.user_metadata?.school || "",
+        grade: authUser.user_metadata?.grade || "",
+        isPremium: userRole === "admin",
+        joinedAt: new Date().toISOString().slice(0, 10),
+        targetEshScore: 720,
+      };
+
+      try {
+        await supabase.from("profiles").upsert({
+          id: authUser.id,
+          email: newProfile.email,
+          name: newProfile.name,
+          role: newProfile.role,
+          school: newProfile.school,
+          grade: newProfile.grade,
+          is_premium: newProfile.isPremium,
+          target_esh_score: newProfile.targetEshScore,
+          student_code: newProfile.studentCode,
+        });
+      } catch (upsertErr) {
+        console.warn("Could not insert profile into supabase:", upsertErr);
+      }
+
+      return newProfile;
+    }
+  } catch (err) {
+    console.error("fetchUserProfileFromSupabase failed:", err);
+  }
+  return null;
+}
+
+// -------------------------------------------------------------
+// Live Supabase Sync Functions for Submissions & Mistakes
+// -------------------------------------------------------------
+
+export async function saveSubmissionToSupabase(sub: ExamSubmission): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { data: authData } = await supabase.auth.getUser();
+    const currentUserId = authData?.user?.id || sub.userId;
+
+    const payload: any = {
+      user_id: currentUserId,
+      source: sub.source || "digital",
+      raw_score: sub.rawScore,
+      scaled_score: sub.scaledScore,
+      percentage: sub.percentage,
+      time_spent_seconds: sub.timeSpentSeconds || 0,
+      answers: sub.answers || {},
+      category_scores: sub.categoryScores || {},
+      wrong_question_ids: sub.wrongQuestionIds || [],
+      submitted_at: sub.submittedAt || new Date().toISOString(),
+    };
+
+    if (sub.examId) {
+      payload.exam_id = sub.examId;
+    }
+
+    let { error } = await supabase.from("submissions").insert(payload);
+    // If foreign key constraint failed on exam_id, retry without exam_id
+    if (error && error.message?.includes("foreign key")) {
+      delete payload.exam_id;
+      const retryResult = await supabase.from("submissions").insert(payload);
+      error = retryResult.error;
+    }
+
+    if (error) {
+      console.warn("Supabase saveSubmission error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("saveSubmissionToSupabase caught:", err);
+    return false;
+  }
+}
+
+export async function saveMistakeToSupabase(m: MistakeItem): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { data: authData } = await supabase.auth.getUser();
+    const currentUserId = authData?.user?.id || m.userId;
+
+    const payload: any = {
+      user_id: currentUserId,
+      question_id: m.questionId || m.question?.id || "q-1",
+      user_answer: m.userAnswer || m.userLastAnswer || "",
+      correct_answer: m.correctAnswer || m.question?.correctAnswer || "",
+      smart_feedback: m.smartFeedback || m.question?.explanation || "",
+      resolved: Boolean(m.resolved || m.masteryLevel === "mastered"),
+    };
+
+    if (m.examId) {
+      payload.exam_id = m.examId;
+    }
+
+    let { error } = await supabase.from("mistakes").insert(payload);
+    if (error && error.message?.includes("foreign key")) {
+      delete payload.exam_id;
+      const retry = await supabase.from("mistakes").insert(payload);
+      error = retry.error;
+    }
+
+    if (error) {
+      console.warn("Supabase saveMistake error:", error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("saveMistakeToSupabase caught:", err);
+    return false;
+  }
+}
+
+export async function fetchUserSubmissionsFromSupabase(userId: string): Promise<ExamSubmission[]> {
+  if (!supabase || !userId) return [];
+  try {
+    const { data, error } = await supabase
+      .from("submissions")
+      .select("*")
+      .eq("user_id", userId)
+      .order("submitted_at", { ascending: false });
+
+    if (error) {
+      console.warn("Supabase fetch submissions error:", error.message);
+      return [];
+    }
+
+    if (data && data.length > 0) {
+      return data.map((d: any) => ({
+        id: d.id,
+        examId: d.exam_id || "esh-past-paper",
+        examTitle: d.exam_title || "Англи хэлний ЭЕШ Сорилт",
+        userId: d.user_id,
+        userName: d.user_name || "",
+        source: d.source || "digital",
+        answers: d.answers || {},
+        rawScore: d.raw_score,
+        percentage: Number(d.percentage) || 0,
+        scaledScore: d.scaled_score,
+        timeSpentSeconds: d.time_spent_seconds || 0,
+        categoryScores: d.category_scores || {},
+        wrongQuestionIds: d.wrong_question_ids || [],
+        submittedAt: d.submitted_at || new Date().toISOString(),
+      }));
+    }
+  } catch (err) {
+    console.warn("fetchUserSubmissionsFromSupabase caught:", err);
+  }
+  return [];
+}
+

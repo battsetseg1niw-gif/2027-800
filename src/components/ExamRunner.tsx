@@ -53,12 +53,18 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
   onFinish,
   onExit,
 }) => {
+  // Guard questions list and exam properties
+  const questionsList = exam?.questions || [];
+  const examId = exam?.id || "custom-exam";
+  const validUserId = userId || "student";
+  const totalCount = questionsList.length || exam?.totalQuestions || 1;
+
   // Compute default exam duration in minutes: 80 min for 50 questions standard, or based on exam
   const defaultMinutes =
-    exam.durationMinutes && exam.durationMinutes > 0
+    exam?.durationMinutes && exam.durationMinutes > 0
       ? exam.durationMinutes
-      : exam.totalQuestions
-      ? Math.max(15, Math.ceil(exam.totalQuestions * 1.6))
+      : totalCount > 0
+      ? Math.max(15, Math.ceil(totalCount * 1.6))
       : 80;
 
   const totalAllocatedSeconds = defaultMinutes * 60;
@@ -117,9 +123,9 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
 
   // Load autosaved progress if available
   useEffect(() => {
-    const saved = localStorage.getItem(`autosave_exam_${exam.id}_${userId}`);
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem(`autosave_exam_${examId}_${validUserId}`);
+      if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.answers) setAnswers(parsed.answers);
         if (parsed.currentIdx !== undefined) setCurrentIdx(parsed.currentIdx);
@@ -129,11 +135,11 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
         if (parsed.elapsedSeconds !== undefined) {
           setElapsedSeconds(parsed.elapsedSeconds);
         }
-      } catch (e) {
-        // ignore
       }
+    } catch (e) {
+      // ignore
     }
-  }, [exam.id, userId]);
+  }, [examId, validUserId]);
 
   // Active Timer Interval - Runs in ALL modes
   useEffect(() => {
@@ -177,18 +183,22 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
   useEffect(() => {
     if (isSubmitted) return;
     const interval = setInterval(() => {
-      localStorage.setItem(
-        `autosave_exam_${exam.id}_${userId}`,
-        JSON.stringify({
-          answers,
-          currentIdx,
-          timeLeftSeconds,
-          elapsedSeconds,
-        })
-      );
+      try {
+        localStorage.setItem(
+          `autosave_exam_${examId}_${validUserId}`,
+          JSON.stringify({
+            answers,
+            currentIdx,
+            timeLeftSeconds,
+            elapsedSeconds,
+          })
+        );
+      } catch (e) {
+        // ignore
+      }
     }, 5000);
     return () => clearInterval(interval);
-  }, [answers, currentIdx, timeLeftSeconds, elapsedSeconds, isSubmitted, exam.id, userId]);
+  }, [answers, currentIdx, timeLeftSeconds, elapsedSeconds, isSubmitted, examId, validUserId]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -196,14 +206,14 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
       if (isSubmitted || isPaused || showConfirmModal) return;
 
       if (e.key === "ArrowRight") {
-        setCurrentIdx((prev) => Math.min(exam.totalQuestions - 1, prev + 1));
+        setCurrentIdx((prev) => Math.min(Math.max(0, questionsList.length - 1), prev + 1));
       } else if (e.key === "ArrowLeft") {
         setCurrentIdx((prev) => Math.max(0, prev - 1));
       } else if (["a", "b", "c", "d", "e"].includes(e.key.toLowerCase())) {
         const optionKey = e.key.toUpperCase();
-        const currentQ = exam.questions[currentIdx];
+        const currentQ = questionsList[currentIdx];
         if (currentQ) {
-          const opt = currentQ.options.find((o) => o.id === optionKey);
+          const opt = (currentQ.options || []).find((o) => o.id === optionKey);
           if (opt) {
             handleSelectAnswer(currentQ.questionNumber, optionKey);
           }
@@ -213,22 +223,26 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [currentIdx, isSubmitted, isPaused, showConfirmModal, exam.questions, exam.totalQuestions]);
+  }, [currentIdx, isSubmitted, isPaused, showConfirmModal, questionsList]);
 
   // Autosave to localStorage on answer change
   const handleSelectAnswer = (qNumber: number, optionId: string) => {
     if (isSubmitted) return;
     const nextAnswers = { ...answers, [qNumber]: optionId };
     setAnswers(nextAnswers);
-    localStorage.setItem(
-      `autosave_exam_${exam.id}_${userId}`,
-      JSON.stringify({
-        answers: nextAnswers,
-        currentIdx,
-        timeLeftSeconds,
-        elapsedSeconds,
-      })
-    );
+    try {
+      localStorage.setItem(
+        `autosave_exam_${examId}_${validUserId}`,
+        JSON.stringify({
+          answers: nextAnswers,
+          currentIdx,
+          timeLeftSeconds,
+          elapsedSeconds,
+        })
+      );
+    } catch (e) {
+      // ignore
+    }
   };
 
   const handleToggleFlag = (qNumber: number) => {
@@ -256,7 +270,7 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
       Reading: { correct: 0, total: 0 },
     };
 
-    exam.questions.forEach((q) => {
+    questionsList.forEach((q) => {
       const cat = q.category || "Grammar";
       if (!catScores[cat]) catScores[cat] = { correct: 0, total: 0 };
       catScores[cat].total += 1;
@@ -267,20 +281,21 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
       }
     });
 
-    const percentage = Math.round((rawScore / (exam.totalQuestions || 1)) * 100);
+    const totalCalculated = questionsList.length || exam?.totalQuestions || 1;
+    const percentage = Math.round((rawScore / totalCalculated) * 100);
     // ESH scale formula: 200 + (rawScore / total) * 600
     const scaledScore = Math.min(
       800,
-      Math.round(200 + (rawScore / (exam.totalQuestions || 1)) * 600)
+      Math.round(200 + (rawScore / totalCalculated) * 600)
     );
     const finalTimeSpent = elapsedSeconds > 0 ? elapsedSeconds : Math.round((Date.now() - startTimeRef.current) / 1000);
 
     const submission: ExamSubmission = {
       id: `sub-${Date.now()}`,
-      examId: exam.id,
-      examTitle: exam.title,
-      userId,
-      userName,
+      examId: examId,
+      examTitle: exam?.title || "Сорилт",
+      userId: validUserId,
+      userName: userName || "Сурагч",
       answers,
       rawScore,
       percentage,
@@ -292,7 +307,11 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
     };
 
     setSubmissionData(submission);
-    localStorage.removeItem(`autosave_exam_${exam.id}_${userId}`);
+    try {
+      localStorage.removeItem(`autosave_exam_${examId}_${validUserId}`);
+    } catch (e) {
+      // ignore
+    }
     onFinish(submission);
   };
 

@@ -52,11 +52,35 @@ export interface Question {
   audioUrl?: string; // Audio listening task
   attachmentName?: string;
   attachmentType?: "image" | "audio" | "document";
+  points?: number; // Point value from PDF task heading (e.g. 1, 2, 3)
+  section?: 1 | 2;
+  taskNumber?: string; // e.g. "Task 1", "Task 2", "2.1", "2.2", "2.3"
+  taskTitle?: string;
+  taskInstruction?: string;
+  pointFormula?: string; // e.g. "/6x1=6 points/"
+  underlinedSentence?: string; // For ERROR_IDENTIFICATION
   // Type-specific data
   matchingPairs?: MatchingPair[]; // For "matching"
   blanks?: BlankItem[]; // For "fill_blank" / completing
   dragItems?: DragItem[]; // For "drag_drop"
   dropZones?: DropZone[]; // For "drag_drop"
+  // Section 2 hierarchical structures
+  subBlanks?: {
+    id: string;
+    label: string; // "a", "b", "c", etc.
+    options: { id: string; text: string }[];
+    correctAnswer?: string;
+    points?: number;
+  }[];
+  matchingGroups?: {
+    id: string;
+    title: string;
+    pointFormula?: string;
+    points: number;
+    leftItems: { id: string; label: string; text: string }[];
+    rightItems: { id: string; label: string; text: string }[];
+    correctPairs?: Record<string, string>; // leftId -> rightId
+  }[];
 }
 
 export interface Exam {
@@ -73,6 +97,10 @@ export interface Exam {
   createdBy: string;
   createdByName?: string;
   createdAt: string;
+  rawTotalPoints?: number;
+  section1Points?: number;
+  section2Points?: number;
+  isHierarchical2026?: boolean;
 }
 
 export interface UserProfile {
@@ -362,4 +390,7 @@ export interface PlatformSettings {
   announcement?: string;
   updatedAt: string;
 }
+
+export * from "./badge";
+
 

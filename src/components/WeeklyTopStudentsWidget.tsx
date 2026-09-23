@@ -55,76 +55,86 @@ export const WeeklyTopStudentsWidget: React.FC<WeeklyTopStudentsWidgetProps> = (
         </div>
       </div>
 
-      {/* TOP 3 PODIUM CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-        {topThree.map((st, idx) => {
-          const podiumStyles = [
-            {
-              border: "border-amber-300 bg-gradient-to-b from-amber-50/60 to-white",
-              badge: "bg-amber-100 text-amber-900 border-amber-300",
-              rank: "🥇 1-р байр",
-              accent: "text-amber-600",
-            },
-            {
-              border: "border-slate-300 bg-gradient-to-b from-slate-50 to-white",
-              badge: "bg-slate-200 text-slate-800 border-slate-300",
-              rank: "🥈 2-р байр",
-              accent: "text-blue-600",
-            },
-            {
-              border: "border-amber-200 bg-gradient-to-b from-orange-50/40 to-white",
-              badge: "bg-orange-100 text-orange-900 border-orange-200",
-              rank: "🥉 3-р байр",
-              accent: "text-orange-600",
-            },
-          ][idx] || {
-            border: "border-slate-200 bg-white",
-            badge: "bg-slate-100 text-slate-700",
-            rank: `#${idx + 1}`,
-            accent: "text-slate-900",
-          };
+      {/* TOP 3 PODIUM CARDS OR EMPTY STATE */}
+      {topStudents.length === 0 ? (
+        <div className="py-8 text-center bg-slate-50/60 rounded-2xl border border-slate-100 space-y-2">
+          <Trophy className="w-8 h-8 text-slate-300 mx-auto" />
+          <div className="text-sm font-bold text-slate-700">Одоогоор 7 хоногийн шилдэг өсөлттэй сурагчдын мэдээлэл гараагүй байна</div>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Сурагчид ЭЕШ сорилт гүйцэтгэж, онооны ахиц гаргаснаар энэхүү самбарт бодит оноогоороо жагсана.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+          {topThree.map((st, idx) => {
+            const podiumStyles = [
+              {
+                border: "border-amber-300 bg-gradient-to-b from-amber-50/60 to-white",
+                badge: "bg-amber-100 text-amber-900 border-amber-300",
+                rank: "🥇 1-р байр",
+                accent: "text-amber-600",
+              },
+              {
+                border: "border-slate-300 bg-gradient-to-b from-slate-50 to-white",
+                badge: "bg-slate-200 text-slate-800 border-slate-300",
+                rank: "🥈 2-р байр",
+                accent: "text-blue-600",
+              },
+              {
+                border: "border-amber-200 bg-gradient-to-b from-orange-50/40 to-white",
+                badge: "bg-orange-100 text-orange-900 border-orange-200",
+                rank: "🥉 3-р байр",
+                accent: "text-orange-600",
+              },
+            ][idx] || {
+              border: "border-slate-200 bg-white",
+              badge: "bg-slate-100 text-slate-700",
+              rank: `#${idx + 1}`,
+              accent: "text-slate-900",
+            };
 
-          return (
-            <div
-              key={st.id}
-              className={`rounded-2xl p-5 border-2 ${podiumStyles.border} shadow-xs relative flex flex-col justify-between space-y-4 hover:shadow-md transition-shadow`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-black border ${podiumStyles.badge}`}>
-                  {podiumStyles.rank}
-                </span>
-                <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  <span>+{st.scoreGain} оноо</span>
-                </span>
-              </div>
+            return (
+              <div
+                key={st.id}
+                className={`rounded-2xl p-5 border-2 ${podiumStyles.border} shadow-xs relative flex flex-col justify-between space-y-4 hover:shadow-md transition-shadow`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-black border ${podiumStyles.badge}`}>
+                    {podiumStyles.rank}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3" />
+                    <span>+{st.scoreGain} оноо</span>
+                  </span>
+                </div>
 
-              <div>
-                <h4 className="text-base font-extrabold text-slate-900">{st.name}</h4>
-                <p className="text-xs text-slate-700">{st.school} • {st.grade}</p>
-                <div className="mt-2 text-[11px] font-bold text-indigo-700 bg-indigo-50/70 px-2.5 py-1 rounded-lg border border-indigo-100">
-                  {st.highlightTag}
+                <div>
+                  <h4 className="text-base font-extrabold text-slate-900">{st.name}</h4>
+                  <p className="text-xs text-slate-700">{st.school} • {st.grade}</p>
+                  <div className="mt-2 text-[11px] font-bold text-indigo-700 bg-indigo-50/70 px-2.5 py-1 rounded-lg border border-indigo-100">
+                    {st.highlightTag}
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
-                <div>
-                  <span className="text-[10px] text-slate-700 block font-medium">Оноо</span>
-                  <span className="text-sm font-black text-slate-900">{st.currentScore}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-700 block font-medium">Сорилтууд</span>
-                  <span className="text-sm font-black text-slate-900">{st.testsCompletedThisWeek} тест</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-700 block font-medium">Нарийвчлал</span>
-                  <span className="text-sm font-black text-emerald-600">{st.accuracyRate}%</span>
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
+                  <div>
+                    <span className="text-[10px] text-slate-700 block font-medium">Оноо</span>
+                    <span className="text-sm font-black text-slate-900">{st.currentScore}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-700 block font-medium">Сорилтууд</span>
+                    <span className="text-sm font-black text-slate-900">{st.testsCompletedThisWeek} тест</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-700 block font-medium">Нарийвчлал</span>
+                    <span className="text-sm font-black text-emerald-600">{st.accuracyRate}%</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* OTHER NOTABLE MOVERS & ACTIVE RUNNERS */}
       {others.length > 0 && (

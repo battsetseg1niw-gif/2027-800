@@ -293,81 +293,104 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
       {/* TAB 1: CLASSES */}
       {activeTab === "classes" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {classes.map((cls) => {
-            const classSubmissions = submissions.filter((s) => cls.studentIds.includes(s.userId));
-            const avgScore =
-              classSubmissions.length > 0
-                ? Math.round(
-                    classSubmissions.reduce((acc, curr) => acc + curr.scaledScore, 0) / classSubmissions.length
-                  )
-                : 660;
+        classes.length === 0 ? (
+          <div className="bg-white rounded-2xl p-12 border border-slate-200 shadow-xs text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+              <Users className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Одоогоор үүсгэсэн анги байхгүй байна</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                Та "Шинэ анги үүсгэх" товч дээр дарж анги үүсгээд, гарч ирэх 6 оронтой кодыг сурагчиддаа өгч элсүүлнэ үү.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCreateClassModal(true)}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 inline-flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Анги шинээр үүсгэх</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {classes.map((cls) => {
+              const classSubmissions = submissions.filter((s) => cls.studentIds.includes(s.userId));
+              const avgScore =
+                classSubmissions.length > 0
+                  ? Math.round(
+                      classSubmissions.reduce((acc, curr) => acc + curr.scaledScore, 0) / classSubmissions.length
+                    )
+                  : 0;
 
-            return (
-              <div
-                key={cls.id}
-                className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4 hover:border-emerald-300 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">{cls.name}</h3>
-                    <p className="text-xs text-slate-700 mt-0.5">{cls.description || "Тайлбар оруулаагүй"}</p>
+              return (
+                <div
+                  key={cls.id}
+                  className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4 hover:border-emerald-300 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">{cls.name}</h3>
+                      <p className="text-xs text-slate-700 mt-0.5">{cls.description || "Тайлбар оруулаагүй"}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                      <span className="font-mono font-bold text-xs text-emerald-800">{cls.code}</span>
+                      <button
+                        onClick={() => handleCopyCode(cls.code)}
+                        title="Код хуулах"
+                        className="text-emerald-700 hover:text-emerald-900"
+                      >
+                        {copiedCode === cls.code ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                    <span className="font-mono font-bold text-xs text-emerald-800">{cls.code}</span>
+
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
+                    <div className="bg-slate-50 p-2.5 rounded-xl">
+                      <div className="text-[10px] text-slate-700 font-bold uppercase">Сурагчид</div>
+                      <div className="text-lg font-extrabold text-slate-900 mt-0.5">{cls.studentIds.length}</div>
+                    </div>
+                    <div className="bg-slate-50 p-2.5 rounded-xl">
+                      <div className="text-[10px] text-slate-700 font-bold uppercase">Дундаж ЭЕШ</div>
+                      <div className="text-lg font-extrabold text-emerald-600 mt-0.5">
+                        {avgScore > 0 ? avgScore : "—"}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 p-2.5 rounded-xl">
+                      <div className="text-[10px] text-slate-700 font-bold uppercase">Даалгавар</div>
+                      <div className="text-lg font-extrabold text-blue-600 mt-0.5">
+                        {assignments.filter((a) => a.classId === cls.id).length}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
                     <button
-                      onClick={() => handleCopyCode(cls.code)}
-                      title="Код хуулах"
-                      className="text-emerald-700 hover:text-emerald-900"
+                      onClick={() => {
+                        setAssignClassId(cls.id);
+                        setShowAssignModal(true);
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors"
                     >
-                      {copiedCode === cls.code ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
+                      Даалгавар оноох
+                    </button>
+                    <button
+                      onClick={() => onExportExcel(cls.id)}
+                      className="py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Excel татах</span>
                     </button>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
-                  <div className="bg-slate-50 p-2.5 rounded-xl">
-                    <div className="text-[10px] text-slate-700 font-bold uppercase">Сурагчид</div>
-                    <div className="text-lg font-extrabold text-slate-900 mt-0.5">{cls.studentIds.length}</div>
-                  </div>
-                  <div className="bg-slate-50 p-2.5 rounded-xl">
-                    <div className="text-[10px] text-slate-700 font-bold uppercase">Дундаж ЭЕШ</div>
-                    <div className="text-lg font-extrabold text-emerald-600 mt-0.5">{avgScore}</div>
-                  </div>
-                  <div className="bg-slate-50 p-2.5 rounded-xl">
-                    <div className="text-[10px] text-slate-700 font-bold uppercase">Даалгавар</div>
-                    <div className="text-lg font-extrabold text-blue-600 mt-0.5">
-                      {assignments.filter((a) => a.classId === cls.id).length}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <button
-                    onClick={() => {
-                      setAssignClassId(cls.id);
-                      setShowAssignModal(true);
-                    }}
-                    className="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors"
-                  >
-                    Даалгавар оноох
-                  </button>
-                  <button
-                    onClick={() => onExportExcel(cls.id)}
-                    className="py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Excel татах</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )
       )}
 
       {/* TAB 2: ASSIGNMENTS */}
@@ -384,39 +407,45 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </button>
           </div>
 
-          <div className="divide-y divide-slate-100">
-            {assignments.map((asg) => (
-              <div key={asg.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-                      {asg.className}
-                    </span>
-                    <span className="text-xs text-slate-700 flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-slate-700" />
-                      <span>{asg.timeLimitMinutes} минут</span>
-                    </span>
+          {assignments.length === 0 ? (
+            <div className="py-10 text-center text-slate-500 text-xs">
+              Одоогоор өгсөн даалгавар байхгүй байна. "Шинэ даалгавар" товчийг дарж шалгалт хуваарилна уу.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {assignments.map((asg) => (
+                <div key={asg.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                        {asg.className}
+                      </span>
+                      <span className="text-xs text-slate-700 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-slate-700" />
+                        <span>{asg.timeLimitMinutes} минут</span>
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">{asg.title}</h4>
+                    <div className="text-xs text-slate-700 flex items-center gap-3">
+                      <span>Сонгосон тест: {asg.examTitle}</span>
+                      <span>•</span>
+                      <span>Дуусах: {asg.dueDate}</span>
+                    </div>
                   </div>
-                  <h4 className="text-sm font-bold text-slate-900">{asg.title}</h4>
-                  <div className="text-xs text-slate-700 flex items-center gap-3">
-                    <span>Сонгосон тест: {asg.examTitle}</span>
-                    <span>•</span>
-                    <span>Дуусах: {asg.dueDate}</span>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => onExportExcel(asg.classId)}
-                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Үр дүн татах (Excel)</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onExportExcel(asg.classId)}
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Үр дүн татах (Excel)</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -967,7 +996,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             <div className="mt-2 flex gap-1">
                               {(["A", "B", "C", "D", "E"] as const).map((opt) => (
                                 <button
-                                  key={opt}
+                                  key={`scan-${scan.id}-q-${qNum}-opt-${opt}`}
                                   onClick={() => {
                                     onVerifyOMRScan(scan.id, { [Number(qNum)]: opt });
                                   }}
@@ -1011,7 +1040,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="ж нь: 12А Анги - ЭЕШ 800 бүлэг"
+                  placeholder="ж нь: 12-р анги - Англи хэлний бүлэг"
                   value={newClassName}
                   onChange={(e) => setNewClassName(e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"

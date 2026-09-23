@@ -91,8 +91,8 @@ export const PracticeTestView: React.FC<PracticeTestViewProps> = ({
     const list: { question: Question; examTitle: string; examYear: number }[] = [];
     const seenIds = new Set<string>();
 
-    exams.forEach((ex) => {
-      ex.questions.forEach((q) => {
+    (exams || []).forEach((ex) => {
+      (ex.questions || []).forEach((q) => {
         const uniqueKey = q.id || `${ex.id}-${q.questionNumber}`;
         if (!seenIds.has(uniqueKey)) {
           seenIds.add(uniqueKey);
@@ -246,23 +246,26 @@ export const PracticeTestView: React.FC<PracticeTestViewProps> = ({
 
     if (isCorrect) {
       // Mark as mastered without mistakes!
-      db.markQuestionMastered(currentUser.id, q.id);
+      if (currentUser?.id) {
+        db.markQuestionMastered(currentUser.id, q.id);
+      }
       setMasteredQuestionIds((prev) =>
         prev.includes(q.id) ? prev : [...prev, q.id]
       );
     } else {
       // Unmark from mastered if it was previously mastered
-      db.unmarkQuestionMastered(currentUser.id, q.id);
+      if (currentUser?.id) {
+        db.unmarkQuestionMastered(currentUser.id, q.id);
+        // Record to Mistake Notebook
+        db.recordMistake({
+          userId: currentUser.id,
+          examId: "practice-test",
+          question: q,
+          userLastAnswer: current.selected,
+          smartFeedback: q.explanation || "ЭЕШ-ийн зөв хариултын дүрэм ба тайлбар.",
+        });
+      }
       setMasteredQuestionIds((prev) => prev.filter((id) => id !== q.id));
-
-      // Record to Mistake Notebook
-      db.recordMistake({
-        userId: currentUser.id,
-        examId: "practice-test",
-        question: q,
-        userLastAnswer: current.selected,
-        smartFeedback: q.explanation || "ЭЕШ-ийн зөв хариултын дүрэм ба тайлбар.",
-      });
     }
   };
 
@@ -282,7 +285,9 @@ export const PracticeTestView: React.FC<PracticeTestViewProps> = ({
         "Та өөрийн алдаагүй зөв хийсэн тестүүдийн бүртгэлийг шинэчилж, бүх тестийг дахин дасгалд оруулахдаа итгэлтэй байна уу?"
       )
     ) {
-      db.resetMasteredQuestions(currentUser.id);
+      if (currentUser?.id) {
+        db.resetMasteredQuestions(currentUser.id);
+      }
       setMasteredQuestionIds([]);
       setUserAnswers({});
     }
@@ -305,8 +310,8 @@ export const PracticeTestView: React.FC<PracticeTestViewProps> = ({
         questionNumber: idx + 1,
       })),
       status: "published",
-      createdBy: currentUser.id,
-      createdByName: currentUser.name,
+      createdBy: currentUser?.id || "student",
+      createdByName: currentUser?.name || "Сурагч",
       createdAt: new Date().toISOString().slice(0, 10),
     };
 
@@ -1033,7 +1038,7 @@ const InteractivePracticeCard: React.FC<InteractivePracticeCardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {q.options.map((opt) => {
+          {(q.options || []).map((opt) => {
             const isThisSelected = selectedOption === opt.id;
             const isThisCorrect = opt.id === q.correctAnswer;
 

@@ -37,6 +37,7 @@ import {
   ClassRoom,
 } from "../types";
 import { AdminContentManager } from "./AdminContentManager";
+import { PreviousExamImport } from "./PreviousExamImport";
 
 interface AdminDashboardProps {
   exams: Exam[];
@@ -72,7 +73,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onToggleUserPremium,
 }) => {
   const [adminTab, setAdminTab] = useState<
-    "analytics" | "content-manager" | "pdf-converter" | "review-queue" | "activation-codes" | "users" | "broadcast" | "support"
+    "analytics" | "previous-exam-import" | "content-manager" | "pdf-converter" | "review-queue" | "activation-codes" | "users" | "broadcast" | "support"
   >("analytics");
 
   // PDF / Exam Text AI Extraction state
@@ -254,6 +255,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         >
           <BarChart3 className="w-4 h-4" />
           <span>Бүх хэрэглэгчдийн анализ & явц</span>
+        </button>
+
+        <button
+          onClick={() => setAdminTab("previous-exam-import")}
+          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+            adminTab === "previous-exam-import"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-700 hover:text-slate-800"
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-purple-600 animate-pulse" />
+          <span>2026 ЭЕШ 4 Хувилбар (A, B, C, D) Импорт & Staging</span>
         </button>
 
         <button
@@ -697,6 +710,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* TAB: PREVIOUS EXAM IMPORT (2026 ESH 4 VARIANTS A, B, C, D) */}
+      {adminTab === "previous-exam-import" && (
+        <PreviousExamImport
+          onPublishExam={onPublishExam}
+          existingExams={exams}
+        />
       )}
 
       {/* TAB: CONTENT MANAGER (LESSONS, NEW EXAMS, PAST PAPERS, DAILY VOCAB) */}

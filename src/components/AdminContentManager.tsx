@@ -318,6 +318,9 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
   // ==========================================
   const [lessonsList, setLessonsList] = useState<Lesson[]>(() => db.getLessons());
   const [isCreatingLesson, setIsCreatingLesson] = useState(false);
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
+  const [lessonSearchQuery, setLessonSearchQuery] = useState("");
+  const [lessonFilterCategory, setLessonFilterCategory] = useState<string>("all");
   const [lessonAiTopic, setLessonAiTopic] = useState("");
   const [isGeneratingLessonAi, setIsGeneratingLessonAi] = useState(false);
   const [lessonTitle, setLessonTitle] = useState("");
@@ -331,6 +334,39 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
   const [lessonContent, setLessonContent] = useState("");
   const [lessonVideoUrl, setLessonVideoUrl] = useState("");
   const [lessonTakeaways, setLessonTakeaways] = useState<string[]>([""]);
+
+  const handleStartEditLesson = (lesson: Lesson) => {
+    setEditingLessonId(lesson.id);
+    setLessonTitle(lesson.title);
+    setLessonCategory(
+      ((lesson.category || lesson.track) as any) || "Grammar"
+    );
+    setLessonDifficulty(lesson.difficulty || "Intermediate");
+    setLessonMinutes(lesson.durationMinutes || 25);
+    setLessonContent(lesson.detailedContent || lesson.content || "");
+    setLessonVideoUrl(lesson.videoUrl || "");
+    setLessonTakeaways(
+      lesson.keyTakeaways && lesson.keyTakeaways.length > 0 ? lesson.keyTakeaways : [""]
+    );
+    setIsCreatingLesson(true);
+  };
+
+  const handleCancelLessonForm = () => {
+    setEditingLessonId(null);
+    setIsCreatingLesson(false);
+    setLessonTitle("");
+    setLessonContent("");
+    setLessonVideoUrl("");
+    setLessonTakeaways([""]);
+  };
+
+  const handleDeleteLesson = (lessonId: string, title: string) => {
+    if (confirm(`"${title}" хичээлийг устгахдаа итгэлтэй байна уу?`)) {
+      db.deleteLesson(lessonId);
+      setLessonsList(db.getLessons());
+      showToast(`"${title}" хичээл амжилттай устгагдлаа.`);
+    }
+  };
 
   const handleAiGenerateLesson = async () => {
     if (!lessonAiTopic.trim()) {
@@ -373,44 +409,90 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
       return;
     }
 
-    const newLesson: Lesson = {
-      id: `lesson-${Date.now()}`,
-      track: lessonCategory,
-      order: lessonsList.length + 1,
-      title: lessonTitle.trim(),
-      description: lessonTitle.trim(),
-      isFree: true,
-      durationMinutes: lessonMinutes,
-      summaryRule: lessonTitle.trim(),
-      detailedContent: lessonContent,
-      content: lessonContent,
-      category: lessonCategory,
-      difficulty: lessonDifficulty,
-      videoUrl: lessonVideoUrl.trim() || undefined,
-      keyTakeaways: lessonTakeaways.filter((t) => t.trim().length > 0),
-      quizQuestions: [
-        {
-          question: `Sample question on ${lessonTitle}`,
-          options: [
-            { id: "A", text: "Option A" },
-            { id: "B", text: "Option B" },
-            { id: "C", text: "Option C" },
-            { id: "D", text: "Option D" },
-          ],
-          correctAnswer: "A",
-          explanation: `Зөв хариулт: Тухайн дүрмийн дагуу Option A зөв байна.`,
-        },
-      ],
-      createdAt: new Date().toISOString(),
-    };
+    if (editingLessonId) {
+      const existing = lessonsList.find((l) => l.id === editingLessonId);
+      const updatedLesson: Lesson = {
+        ...(existing || {}),
+        id: editingLessonId,
+        track: lessonCategory,
+        order: existing?.order || 1,
+        title: lessonTitle.trim(),
+        description: lessonTitle.trim(),
+        isFree: existing?.isFree ?? true,
+        durationMinutes: lessonMinutes,
+        summaryRule: lessonTitle.trim(),
+        detailedContent: lessonContent,
+        content: lessonContent,
+        category: lessonCategory,
+        difficulty: lessonDifficulty,
+        videoUrl: lessonVideoUrl.trim() || undefined,
+        keyTakeaways: lessonTakeaways.filter((t) => t.trim().length > 0),
+        quizQuestions: existing?.quizQuestions || [
+          {
+            question: `Sample question on ${lessonTitle}`,
+            options: [
+              { id: "A", text: "Option A" },
+              { id: "B", text: "Option B" },
+              { id: "C", text: "Option C" },
+              { id: "D", text: "Option D" },
+            ],
+            correctAnswer: "A",
+            explanation: `Зөв хариулт: Тухайн дүрмийн дагуу Option A зөв байна.`,
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
 
-    db.addLesson(newLesson);
-    setLessonsList(db.getLessons());
-    setIsCreatingLesson(false);
-    setLessonTitle("");
-    setLessonContent("");
-    setLessonTakeaways([""]);
-    showToast(`"${newLesson.title}" хичээл амжилттай хадгалагдлаа!`);
+      db.updateLesson(updatedLesson);
+      setLessonsList(db.getLessons());
+      setEditingLessonId(null);
+      setIsCreatingLesson(false);
+      setLessonTitle("");
+      setLessonContent("");
+      setLessonVideoUrl("");
+      setLessonTakeaways([""]);
+      showToast(`"${updatedLesson.title}" хичээл амжилттай засагдаж хадгалагдлаа!`);
+    } else {
+      const newLesson: Lesson = {
+        id: `lesson-${Date.now()}`,
+        track: lessonCategory,
+        order: lessonsList.length + 1,
+        title: lessonTitle.trim(),
+        description: lessonTitle.trim(),
+        isFree: true,
+        durationMinutes: lessonMinutes,
+        summaryRule: lessonTitle.trim(),
+        detailedContent: lessonContent,
+        content: lessonContent,
+        category: lessonCategory,
+        difficulty: lessonDifficulty,
+        videoUrl: lessonVideoUrl.trim() || undefined,
+        keyTakeaways: lessonTakeaways.filter((t) => t.trim().length > 0),
+        quizQuestions: [
+          {
+            question: `Sample question on ${lessonTitle}`,
+            options: [
+              { id: "A", text: "Option A" },
+              { id: "B", text: "Option B" },
+              { id: "C", text: "Option C" },
+              { id: "D", text: "Option D" },
+            ],
+            correctAnswer: "A",
+            explanation: `Зөв хариулт: Тухайн дүрмийн дагуу Option A зөв байна.`,
+          },
+        ],
+        createdAt: new Date().toISOString(),
+      };
+
+      db.addLesson(newLesson);
+      setLessonsList(db.getLessons());
+      setIsCreatingLesson(false);
+      setLessonTitle("");
+      setLessonContent("");
+      setLessonVideoUrl("");
+      setLessonTakeaways([""]);
+      showToast(`"${newLesson.title}" шинэ хичээл амжилттай нэмэгдлээ!`);
+    }
   };
 
   // ==========================================
@@ -796,34 +878,69 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
       {/* ========================================================================= */}
       {subTab === "lessons" && (
         <div className="space-y-6 animate-in fade-in">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-purple-50/60 p-5 rounded-2xl border border-purple-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-purple-50/60 dark:bg-purple-950/40 p-5 rounded-2xl border border-purple-100 dark:border-purple-800">
             <div>
-              <h3 className="text-base font-black text-purple-950">Learning Center - Хичээлийн удирдлага</h3>
-              <p className="text-xs text-purple-800/80 mt-0.5">
-                Grammar, Vocabulary, Phrasal Verbs, Reading-ийн системчилсэн хичээлүүд нэмж, баяжуулах боломжтой.
+              <h3 className="text-base font-black text-purple-950 dark:text-purple-200">
+                Learning Center - Хичээлийн удирдлага
+              </h3>
+              <p className="text-xs text-purple-800/80 dark:text-purple-300 mt-0.5">
+                Grammar, Vocabulary, Phrasal Verbs, Reading-ийн системчилсэн хичээлүүдийг засаж, шинээр нэмж, баяжуулах боломжтой.
               </p>
             </div>
             <button
-              onClick={() => setIsCreatingLesson(!isCreatingLesson)}
-              className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors self-start sm:self-auto"
+              id="btn-admin-add-lesson"
+              onClick={() => {
+                if (isCreatingLesson) {
+                  handleCancelLessonForm();
+                } else {
+                  setEditingLessonId(null);
+                  setLessonTitle("");
+                  setLessonContent("");
+                  setLessonVideoUrl("");
+                  setLessonTakeaways([""]);
+                  setIsCreatingLesson(true);
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>{isCreatingLesson ? "Жагсаалт харах" : "Шинэ хичээл нэмэх"}</span>
+              <span>
+                {isCreatingLesson
+                  ? editingLessonId
+                    ? "Засварыг хаах"
+                    : "Жагсаалт харах"
+                  : "Шинэ хичээл нэмэх"}
+              </span>
             </button>
           </div>
 
-          {/* CREATE LESSON FORM */}
+          {/* CREATE / EDIT LESSON FORM */}
           {isCreatingLesson && (
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-5 animate-in fade-in">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <h4 className="text-sm font-bold text-slate-900">Шинэ хичээл үүсгэх</h4>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-purple-200 dark:border-purple-800 shadow-sm space-y-5 animate-in fade-in ring-2 ring-purple-400/20">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                    {editingLessonId ? <Edit3 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {editingLessonId ? "Хичээл засах, шинэчлэх" : "Шинэ хичээл үүсгэх"}
+                    </h4>
+                    {editingLessonId && (
+                      <p className="text-[10px] text-purple-600 dark:text-purple-400 font-mono">
+                        Засаж буй ID: {editingLessonId}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={lessonAiTopic}
                     onChange={(e) => setLessonAiTopic(e.target.value)}
                     placeholder="AI-аар бэлтгэх сэдэв..."
-                    className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs w-48 sm:w-64"
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 w-48 sm:w-64"
                   />
                   <button
                     disabled={isGeneratingLessonAi}
@@ -836,23 +953,29 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Гарчиг</label>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Хичээлийн гарчиг
+                  </label>
                   <input
+                    id="input-lesson-title"
                     type="text"
                     value={lessonTitle}
                     onChange={(e) => setLessonTitle(e.target.value)}
-                    placeholder="Хичээлийн гарчиг..."
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-900"
+                    placeholder="Жишээ: Present Perfect vs Past Simple..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Ангилал</label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Ангилал (Track)
+                  </label>
                   <select
+                    id="select-lesson-category"
                     value={lessonCategory}
                     onChange={(e) => setLessonCategory(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
                   >
                     <option value="Grammar">Grammar</option>
                     <option value="Vocabulary">Vocabulary</option>
@@ -862,11 +985,14 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Түвшин</label>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Түвшин (Difficulty)
+                  </label>
                   <select
+                    id="select-lesson-difficulty"
                     value={lessonDifficulty}
                     onChange={(e) => setLessonDifficulty(e.target.value as any)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-900 bg-white"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
                   >
                     <option value="Beginner">Beginner</option>
                     <option value="Intermediate">Intermediate</option>
@@ -875,57 +1001,187 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Үргэлжлэх хугацаа (минут)
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={120}
+                    value={lessonMinutes}
+                    onChange={(e) => setLessonMinutes(Number(e.target.value) || 25)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Видео холбоос (YouTube / URL - сонголтоор)
+                  </label>
+                  <input
+                    type="text"
+                    value={lessonVideoUrl}
+                    onChange={(e) => setLessonVideoUrl(e.target.value)}
+                    placeholder="https://youtube.com/watch?v=..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Дэлгэрэнгүй онол, дүрмийн тайлбар
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Дэлгэрэнгүй онол, дүрмийн тайлбар & Жишээ өгүүлбэрүүд
                 </label>
                 <textarea
-                  rows={6}
+                  id="textarea-lesson-content"
+                  rows={8}
                   value={lessonContent}
                   onChange={(e) => setLessonContent(e.target.value)}
-                  placeholder="Хичээлийн бүрэн онолыг энд бичнэ..."
-                  className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-900"
+                  placeholder="Хичээлийн бүрэн онол, дүрмийн томьёо, жишээнүүдийг энд бичнэ..."
+                  className="w-full p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-900 dark:text-white leading-relaxed font-mono"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <button
-                  onClick={() => setIsCreatingLesson(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold"
+                  type="button"
+                  onClick={handleCancelLessonForm}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold transition-colors cursor-pointer"
                 >
                   Болих
                 </button>
                 <button
+                  id="btn-save-lesson"
+                  type="button"
                   onClick={handleSaveLesson}
-                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>Хадгалах</span>
+                  <span>{editingLessonId ? "Шинэчлэн хадгалах" : "Шинэ хичээл хадгалах"}</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* Lessons List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {lessonsList.map((ls) => (
-              <div
-                key={ls.id}
-                className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between space-y-3"
-              >
-                <div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800">
-                    {ls.category}
-                  </span>
-                  <h4 className="font-bold text-sm text-slate-900 mt-2">{ls.title}</h4>
-                  <p className="text-xs text-slate-600 line-clamp-2 mt-1">{ls.summaryRule}</p>
-                </div>
-                <div className="text-[11px] text-slate-500 pt-2 border-t border-slate-100">
-                  {ls.durationMinutes} мин • Түвшин: {ls.difficulty}
-                </div>
-              </div>
-            ))}
+          {/* Search & Category Filter Controls */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={lessonSearchQuery}
+                onChange={(e) => setLessonSearchQuery(e.target.value)}
+                placeholder="Хичээл хайх (гарчиг, дүрэм)..."
+                className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              {["all", "Grammar", "Vocabulary", "Phrasal Verbs", "Reading", "Idioms"].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setLessonFilterCategory(cat)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                    lessonFilterCategory === cat
+                      ? "bg-purple-600 text-white shadow-xs"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {cat === "all" ? "Бүгд" : cat}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Lessons List with Edit & Delete */}
+          {(() => {
+            const filtered = lessonsList.filter((ls) => {
+              const matchesCat =
+                lessonFilterCategory === "all" ||
+                ls.category === lessonFilterCategory ||
+                ls.track === lessonFilterCategory;
+              const matchesSearch =
+                !lessonSearchQuery.trim() ||
+                ls.title.toLowerCase().includes(lessonSearchQuery.toLowerCase()) ||
+                (ls.detailedContent || ls.content || "")
+                  .toLowerCase()
+                  .includes(lessonSearchQuery.toLowerCase());
+              return matchesCat && matchesSearch;
+            });
+
+            if (filtered.length === 0) {
+              return (
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-800 space-y-3">
+                  <BookOpen className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Хайлтад тохирох хичээл олдсонгүй
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Та шүүлтүүрээ өөрчлөх эсвэл "Шинэ хичээл нэмэх" товчоор нэмнэ үү.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filtered.map((ls) => (
+                  <div
+                    key={ls.id}
+                    id={`lesson-card-${ls.id}`}
+                    className={`bg-white dark:bg-slate-900 rounded-2xl p-5 border transition-all shadow-xs flex flex-col justify-between space-y-3 ${
+                      editingLessonId === ls.id
+                        ? "border-purple-500 ring-2 ring-purple-500/20"
+                        : "border-slate-200 dark:border-slate-800 hover:border-purple-200 dark:hover:border-purple-900"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300">
+                          {ls.category || ls.track}
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                          {ls.durationMinutes || 25} мин • {ls.difficulty || "Intermediate"}
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-white mt-2 leading-snug">
+                        {ls.title}
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-3 mt-1.5 leading-relaxed">
+                        {ls.detailedContent || ls.content || ls.summaryRule || "Хичээлийн агуулгатай танилцах."}
+                      </p>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        {ls.id.startsWith("lesson-") ? "Нэмсэн" : "Суурь"}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          id={`btn-edit-lesson-${ls.id}`}
+                          onClick={() => handleStartEditLesson(ls)}
+                          className="px-2.5 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Хичээлийг засах"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Засах</span>
+                        </button>
+                        <button
+                          id={`btn-delete-lesson-${ls.id}`}
+                          onClick={() => handleDeleteLesson(ls.id, ls.title)}
+                          className="p-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-rose-200 dark:border-rose-900 transition-colors cursor-pointer"
+                          title="Хичээлийг устгах"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 

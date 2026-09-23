@@ -9,6 +9,19 @@
     <meta property="og:description" content="Монголын Англи хэлний ЭЕШ-д бэлтгэх бүрэн ажиллагаатай платформ: 2006–2026 сан, OMR шалгагч, Smart Feedback, Багш & Сурагч систем" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        try {
+          var savedTheme = localStorage.getItem('smartesh_theme');
+          var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (savedTheme === 'dark' || (!savedTheme && systemDark)) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

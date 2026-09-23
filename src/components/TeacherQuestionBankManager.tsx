@@ -138,8 +138,8 @@ export const TeacherQuestionBankManager: React.FC<TeacherQuestionBankManagerProp
     const list: { question: Question; examId: string; examTitle: string; examYear: number }[] = [];
     const seen = new Set<string>();
 
-    exams.forEach((ex) => {
-      ex.questions.forEach((q) => {
+    (exams || []).forEach((ex) => {
+      (ex.questions || []).forEach((q) => {
         const qId = q.id || `${ex.id}-${q.questionNumber}`;
         if (!seen.has(qId)) {
           seen.add(qId);

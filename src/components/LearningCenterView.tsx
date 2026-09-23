@@ -20,9 +20,10 @@ import {
 } from "lucide-react";
 import { Lesson, UserProfile } from "../types";
 import { initialLessons } from "../data/learningCenterData";
+import { db } from "../lib/supabase";
 
 interface LearningCenterViewProps {
-  currentUser: UserProfile;
+  currentUser?: UserProfile | null;
   onOpenPremium: () => void;
 }
 
@@ -30,6 +31,10 @@ export const LearningCenterView: React.FC<LearningCenterViewProps> = ({
   currentUser,
   onOpenPremium,
 }) => {
+  const [lessons, setLessons] = useState<Lesson[]>(() => {
+    const saved = db.getLessons();
+    return saved && saved.length > 0 ? saved : initialLessons;
+  });
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
@@ -38,6 +43,13 @@ export const LearningCenterView: React.FC<LearningCenterViewProps> = ({
   const [dynamicAiQuestions, setDynamicAiQuestions] = useState<any[] | null>(null);
   const [aiQuizNotice, setAiQuizNotice] = useState<string | null>(null);
   const [quizSeconds, setQuizSeconds] = useState(0);
+
+  useEffect(() => {
+    const loaded = db.getLessons();
+    if (loaded && loaded.length > 0) {
+      setLessons(loaded);
+    }
+  }, []);
 
   useEffect(() => {
     if (!activeLesson || showQuizResult) return;
@@ -53,18 +65,18 @@ export const LearningCenterView: React.FC<LearningCenterViewProps> = ({
     return `${mins.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  const filteredLessons = initialLessons.filter((l) => {
+  const filteredLessons = lessons.filter((l) => {
     if (selectedCategory === "all") return true;
-    if (selectedCategory === "Grammar") return l.track === "Grammar";
-    if (selectedCategory === "Vocabulary") return l.track === "Vocabulary";
-    if (selectedCategory === "Phrasal Verbs") return l.track === "Phrasal Verbs" || l.track === "Idioms";
-    if (selectedCategory === "Communication") return l.track === "Communication";
-    if (selectedCategory === "Reading") return l.track === "Reading";
-    return l.track === selectedCategory;
+    if (selectedCategory === "Grammar") return l.track === "Grammar" || l.category === "Grammar";
+    if (selectedCategory === "Vocabulary") return l.track === "Vocabulary" || l.category === "Vocabulary";
+    if (selectedCategory === "Phrasal Verbs") return l.track === "Phrasal Verbs" || l.track === "Idioms" || l.category === "Phrasal Verbs" || l.category === "Idioms";
+    if (selectedCategory === "Communication") return l.track === "Communication" || l.category === "Communication";
+    if (selectedCategory === "Reading") return l.track === "Reading" || l.category === "Reading";
+    return l.track === selectedCategory || l.category === selectedCategory;
   });
 
   const handleOpenLesson = (lesson: Lesson) => {
-    if (lesson.isLocked && !currentUser.isPremium) {
+    if (lesson.isLocked && !currentUser?.isPremium) {
       onOpenPremium();
       return;
     }
@@ -149,7 +161,7 @@ export const LearningCenterView: React.FC<LearningCenterViewProps> = ({
             </p>
           </div>
 
-          {!currentUser.isPremium && (
+          {!currentUser?.isPremium && (
             <button
               onClick={onOpenPremium}
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-extrabold text-xs shadow-lg shadow-amber-500/30 flex items-center gap-2 transition-all shrink-0"
@@ -524,7 +536,7 @@ export const LearningCenterView: React.FC<LearningCenterViewProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredLessons.map((lesson) => {
-              const isLocked = lesson.isLocked && !currentUser.isPremium;
+              const isLocked = lesson.isLocked && !currentUser?.isPremium;
 
               return (
                 <div
