@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg-primary: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-subtle: #f1f5f9;
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: #f8fafc;
+  
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  
+  --border-color: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  
+  --navbar-bg: rgba(255, 255, 255, 0.92);
+  --footer-bg: #ffffff;
+  --card-bg: #ffffff;
+  
+  --accent-primary: #2563eb;
+  --accent-primary-hover: #1d4ed8;
+  --accent-light: #eff6ff;
+  
+  color-scheme: light;
+}
+
+.dark {
+  --bg-primary: #0b0f19;
+  --bg-surface: #111827;
+  --bg-surface-subtle: #1e293b;
+  --bg-surface-elevated: #1f293d;
+  --bg-surface-hover: #1e293b;
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  
+  --border-color: #1e293b;
+  --border-subtle: #192231;
+  
+  --navbar-bg: rgba(15, 23, 42, 0.92);
+  --footer-bg: #0f172a;
+  --card-bg: #111827;
+  
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #60a5fa;
+  --accent-light: rgba(59, 130, 246, 0.15);
+  
+  color-scheme: dark;
+}
+
+html, body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+/* Custom scrollbar in dark mode */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #0b0f19;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

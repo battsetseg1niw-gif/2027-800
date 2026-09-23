@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny global catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'battsetsegb615@gmail.com' && request.auth.token.email_verified == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // User Profile Validation Helper
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'name', 'role']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.email is string && data.email.size() <= 254 &&
+        data.name is string && data.name.size() <= 100 &&
+        data.role in ['student', 'teacher', 'admin'] &&
+        (!('totalExamsCompleted' in data) || (data.totalExamsCompleted is number && data.totalExamsCompleted >= 0)) &&
+        (!('topScaledScore' in data) || (data.topScaledScore is number && data.topScaledScore >= 0 && data.topScaledScore <= 800)) &&
+        (!('mistakesCorrected' in data) || (data.mistakesCorrected is number && data.mistakesCorrected >= 0)) &&
+        (!('unlockedBadgeCount' in data) || (data.unlockedBadgeCount is number && data.unlockedBadgeCount >= 0));
+    }
+
+    // Badge Validation Helper
+    function isValidBadge(data) {
+      return data.keys().hasAll(['id', 'badgeId', 'userId', 'title', 'tier', 'unlockedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.badgeId) &&
+        data.userId == request.auth.uid &&
+        data.title is string && data.title.size() <= 100 &&
+        data.tier in ['bronze', 'silver', 'gold', 'diamond'] &&
+        data.unlockedAt is string && data.unlockedAt.size() <= 50;
+    }
+
+    // Submission Validation Helper
+    function isValidSubmission(data) {
+      return data.keys().hasAll(['id', 'userId', 'examId', 'rawScore', 'scaledScore', 'submittedAt']) &&
+        isValidId(data.id) &&
+        data.userId == request.auth.uid &&
+        data.rawScore is number && data.rawScore >= 0 &&
+        data.scaledScore is number && data.scaledScore >= 200 && data.scaledScore <= 800 &&
+        data.submittedAt is string && data.submittedAt.size() <= 50;
+    }
+
+    // User Collections
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(incoming());
+      allow delete: if isAdmin();
+
+      // Subcollection: Badges
+      match /badges/{badgeId} {
+        allow get: if isOwner(userId) || isAdmin();
+        allow list: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(badgeId) && isValidBadge(incoming());
+        allow update: if isOwner(userId) && isValidId(badgeId) && isValidBadge(incoming());
+        allow delete: if isAdmin();
+      }
+
+      // Subcollection: Submissions
+      match /submissions/{submissionId} {
+        allow get: if isOwner(userId) || isAdmin();
+        allow list: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(submissionId) && isValidSubmission(incoming());
+        allow update: if isAdmin();
+        allow delete: if isAdmin();
+      }
+    }
+
+    // Health check collection for getDocFromServer testConnection
+    match /test/{docId} {
+      allow get: if true;
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Student or teacher user profile record containing identity, role, and milestone stats.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "name": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["student", "teacher", "admin"] },
+        "studentCode": { "type": "string", "maxLength": 12 },
+        "school": { "type": "string", "maxLength": 150 },
+        "grade": { "type": "string", "maxLength": 50 },
+        "isPremium": { "type": "boolean" },
+        "targetEshScore": { "type": "number" },
+        "totalExamsCompleted": { "type": "number" },
+        "mistakesCorrected": { "type": "number" },
+        "topScaledScore": { "type": "number" },
+        "unlockedBadgeCount": { "type": "number" },
+        "joinedAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "email", "name", "role"]
+    },
+    "StudentBadgeRecord": {
+      "title": "StudentBadgeRecord",
+      "description": "Earned badge record for a student milestone.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "badgeId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 100 },
+        "titleEn": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "enum": ["exams", "score", "mistakes", "streak", "subject"] },
+        "tier": { "type": "string", "enum": ["bronze", "silver", "gold", "diamond"] },
+        "unlockedAt": { "type": "string", "maxLength": 50 },
+        "rewardXp": { "type": "number" }
+      },
+      "required": ["id", "badgeId", "userId", "title", "tier", "unlockedAt"]
+    },
+    "ExamSubmissionRecord": {
+      "title": "ExamSubmissionRecord",
+      "description": "Completed digital or paper OMR exam submission record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "examId": { "type": "string", "maxLength": 128 },
+        "examTitle": { "type": "string", "maxLength": 200 },
+        "source": { "type": "string", "enum": ["digital", "omr_paper"] },
+        "rawScore": { "type": "number" },
+        "percentage": { "type": "number" },
+        "scaledScore": { "type": "number" },
+        "timeSpentSeconds": { "type": "number" },
+        "submittedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "examId", "rawScore", "scaledScore", "submittedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with student metadata, milestone counters, and target scores."
+    },
+    "/users/{userId}/badges/{badgeId}": {
+      "schema": "StudentBadgeRecord",
+      "description": "Milestone badges earned by the student."
+    },
+    "/users/{userId}/submissions/{submissionId}": {
+      "schema": "ExamSubmissionRecord",
+      "description": "Student exam submissions for tracking score progress and milestone calculations."
+    }
+  }
+}
