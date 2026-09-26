@@ -35,6 +35,7 @@ import {
   Music,
 } from "lucide-react";
 import { Exam, Question, ExamSubmission } from "../types";
+import { fetchQuestionsForExamFromSupabase } from "../lib/supabase";
 
 interface ExamRunnerProps {
   exam: Exam;
@@ -54,7 +55,9 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
   onExit,
 }) => {
   // Guard questions list and exam properties
-  const questionsList = exam?.questions || [];
+  const [questionsList, setQuestionsList] = useState<Question[]>(exam?.questions || []);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState<boolean>(!exam?.questions || exam.questions.length === 0);
+  const [loadQuestionsError, setLoadQuestionsError] = useState<string | null>(null);
   const examId = exam?.id || "custom-exam";
   const validUserId = userId || "student";
   const totalCount = questionsList.length || exam?.totalQuestions || 1;
@@ -79,6 +82,54 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [smartFeedbackMap, setSmartFeedbackMap] = useState<Record<number, string>>({});
   const [isLoadingFeedback, setIsLoadingFeedback] = useState<number | null>(null);
+
+  // Load questions dynamically from Supabase questions table by exam_id
+  useEffect(() => {
+    let isMounted = true;
+    const loadQuestions = async () => {
+      if (exam?.questions && exam.questions.length > 0) {
+        if (isMounted) {
+          setQuestionsList(exam.questions);
+          setIsLoadingQuestions(false);
+        }
+        return;
+      }
+
+      if (!examId) {
+        if (isMounted) {
+          setLoadQuestionsError("Шалгалтын дугаар (exam_id) олдсонгүй.");
+          setIsLoadingQuestions(false);
+        }
+        return;
+      }
+
+      setIsLoadingQuestions(true);
+      setLoadQuestionsError(null);
+      try {
+        const fetchedQuestions = await fetchQuestionsForExamFromSupabase(examId);
+        if (isMounted) {
+          if (fetchedQuestions && fetchedQuestions.length > 0) {
+            setQuestionsList(fetchedQuestions);
+            const calculatedMins = Math.max(15, Math.ceil(fetchedQuestions.length * 1.6));
+            setTimeLeftSeconds(calculatedMins * 60);
+          } else {
+            setLoadQuestionsError("Энэ шалгалтад одоогоор асуулт бүртгэгдээгүй байна.");
+          }
+          setIsLoadingQuestions(false);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          setLoadQuestionsError("Датабаазаас асуултуудыг татахад алдаа гарлаа: " + (err.message || "Тодорхойгүй алдаа"));
+          setIsLoadingQuestions(false);
+        }
+      }
+    };
+
+    loadQuestions();
+    return () => {
+      isMounted = false;
+    };
+  }, [examId, exam?.questions]);
 
   // Additional UX features: font size, filter in review mode, speech
   const [fontSize, setFontSize] = useState<"normal" | "large" | "xl">("normal");
@@ -269,6 +320,7 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
       Communication: { correct: 0, total: 0 },
       Reading: { correct: 0, total: 0 },
     };
+    const wrongQuestionIds: string[] = [];
 
     questionsList.forEach((q) => {
       const cat = q.category || "Grammar";
@@ -278,6 +330,8 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
       if (answers[q.questionNumber] === q.correctAnswer) {
         rawScore += 1;
         catScores[cat].correct += 1;
+      } else {
+        wrongQuestionIds.push(q.id);
       }
     });
 
@@ -303,6 +357,7 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
       timeSpentSeconds: finalTimeSpent,
       submittedAt: new Date().toISOString(),
       categoryScores: catScores as any,
+      wrongQuestionIds,
       source: "digital",
     };
 
@@ -406,6 +461,36 @@ export const ExamRunner: React.FC<ExamRunnerProps> = ({
     setReviewFilter(filter);
     setReviewStepperIdx(0);
   };
+
+  if (isLoadingQuestions) {
+    return (
+      <div className="min-h-[500px] flex flex-col items-center justify-center p-8 bg-white rounded-3xl border border-slate-200 text-center space-y-4 shadow-sm my-6">
+        <div className="w-12 h-12 rounded-full border-4 border-blue-500/20 border-t-blue-600 animate-spin mx-auto" />
+        <h3 className="text-lg font-bold text-slate-900">Шалгалтын асуултуудыг татаж байна...</h3>
+        <p className="text-xs text-slate-500">Supabase датабаазаас шалгалтын материалыг бодитоор уншиж байна</p>
+      </div>
+    );
+  }
+
+  if (loadQuestionsError && questionsList.length === 0) {
+    return (
+      <div className="min-h-[450px] flex flex-col items-center justify-center p-8 bg-white rounded-3xl border border-slate-200 text-center space-y-4 shadow-sm my-6">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+          <AlertCircle className="w-7 h-7" />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900">Шалгалтын асуулт олдсонгүй</h3>
+        <p className="text-sm text-slate-600 max-w-md mx-auto">
+          {loadQuestionsError}
+        </p>
+        <button
+          onClick={onExit}
+          className="mt-4 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs transition-colors"
+        >
+          Шалгалтын цэс рүү буцах
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div

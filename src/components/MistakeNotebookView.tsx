@@ -142,11 +142,17 @@ export const MistakeNotebookView: React.FC<MistakeNotebookViewProps> = ({
 
       {/* Mistake Items List */}
       {filteredMistakes.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 space-y-3">
-          <Award className="w-12 h-12 text-amber-500 mx-auto" />
-          <h3 className="text-base font-bold text-slate-900">Алдаа олдсонгүй!</h3>
-          <p className="text-xs text-slate-700 max-w-sm mx-auto">
-            Та шалгалт ажиллах үед буруу хийсэн асуултууд энд автоматаар бүртгэгдэнэ.
+        <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 space-y-3 shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+            <BookmarkCheck className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-slate-900">
+            {mistakes.length === 0 ? "Алдааны дэвтэр одоогоор хоосон байна" : "Шүүлтүүрт тохирох алдаа олдсонгүй"}
+          </h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            {mistakes.length === 0
+              ? "Та одоогоор ямар нэгэн сорилд алдаа гаргаагүй байна. Шалгалт ажиллах үед буруу хариулсан бодит асуултууд Supabase датабаазад автоматаар хадгалагдаж энд харагдана."
+              : "Сонгосон ангилал эсвэл түвшинд хамаарах алдаа олдсонгүй."}
           </p>
         </div>
       ) : (
@@ -159,12 +165,12 @@ export const MistakeNotebookView: React.FC<MistakeNotebookViewProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                    {item.question.category}
+                    {item.question?.category || "Grammar"}
                   </span>
                   <span className="text-xs font-bold text-slate-900">
-                    Сэдэв: {item.question.topic || "Ерөнхий дүрэм"}
+                    Сэдэв: {item.question?.topic || "Ерөнхий дүрэм"}
                   </span>
-                  {item.question.subtopic && (
+                  {item.question?.subtopic && (
                     <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">
                       {item.question.subtopic}
                     </span>
@@ -174,38 +180,40 @@ export const MistakeNotebookView: React.FC<MistakeNotebookViewProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-slate-700">Алдааны давтамж:</span>
                   <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">
-                    {item.mistakeCount} удаа алдсан
+                    {item.mistakeCount || 1} удаа алдсан
                   </span>
                 </div>
               </div>
 
               {/* Question Text */}
               <p className="text-sm font-semibold text-slate-900 leading-relaxed">
-                {item.question.text}
+                {item.question?.text || "Асуулт"}
               </p>
 
               {/* Options */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                {item.question.options.map((opt) => {
-                  const isCorrect = opt.id === item.question.correctAnswer;
-                  const isUserWrong = opt.id === item.userLastAnswer && !isCorrect;
+              {item.question?.options && item.question.options.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                  {item.question.options.map((opt) => {
+                    const isCorrect = opt.id === item.question?.correctAnswer;
+                    const isUserWrong = opt.id === (item.userLastAnswer || item.userAnswer) && !isCorrect;
 
-                  let style = "border-slate-200 bg-slate-50 text-slate-700";
-                  if (isCorrect) {
-                    style = "border-emerald-500 bg-emerald-50 text-emerald-950 font-bold";
-                  } else if (isUserWrong) {
-                    style = "border-rose-400 bg-rose-50 text-rose-950 line-through";
-                  }
+                    let style = "border-slate-200 bg-slate-50 text-slate-700";
+                    if (isCorrect) {
+                      style = "border-emerald-500 bg-emerald-50 text-emerald-950 font-bold";
+                    } else if (isUserWrong) {
+                      style = "border-rose-400 bg-rose-50 text-rose-950 line-through";
+                    }
 
-                  return (
-                    <div key={opt.id} className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${style}`}>
-                      <span className="font-bold">{opt.id}.</span>
-                      <span>{opt.text}</span>
-                      {isCorrect && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 ml-auto" />}
-                    </div>
-                  );
-                })}
-              </div>
+                    return (
+                      <div key={opt.id} className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${style}`}>
+                        <span className="font-bold">{opt.id}.</span>
+                        <span>{opt.text}</span>
+                        {isCorrect && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 ml-auto" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Smart Feedback */}
               <div className="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200/80 text-xs text-amber-950 space-y-1">

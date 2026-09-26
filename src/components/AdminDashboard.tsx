@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Shield,
   Upload,
@@ -25,6 +25,7 @@ import {
   Target,
   PieChart,
   BookOpen,
+  Database,
 } from "lucide-react";
 import {
   Exam,
@@ -38,9 +39,13 @@ import {
 } from "../types";
 import { AdminContentManager } from "./AdminContentManager";
 import { PreviousExamImport } from "./PreviousExamImport";
+import { AdminUserManagement } from "./admin/AdminUserManagement";
+import { AdminGlobalQuestionBank } from "./admin/AdminGlobalQuestionBank";
+import { AdminRegionalReports } from "./admin/AdminRegionalReports";
 
 interface AdminDashboardProps {
   exams: Exam[];
+  questions?: Question[];
   users: UserProfile[];
   activationCodes: ActivationCode[];
   notifications: NotificationItem[];
@@ -54,10 +59,15 @@ interface AdminDashboardProps {
   onSendNotification: (title: string, message: string, targetRole: "all" | "student" | "teacher") => void;
   onReplySupportTicket: (ticketId: string, replyText: string) => void;
   onToggleUserPremium: (userId: string) => void;
+  onUpdateUserProfile?: (userId: string, updates: Partial<UserProfile>) => Promise<boolean> | void;
+  onCreateOfficialMockExam?: (exam: Exam) => Promise<boolean> | void;
+  onDeleteQuestion?: (questionId: string) => Promise<boolean> | void;
+  onUpdateQuestion?: (question: Question) => Promise<boolean> | void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   exams,
+  questions = [],
   users,
   activationCodes,
   notifications,
@@ -71,10 +81,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onSendNotification,
   onReplySupportTicket,
   onToggleUserPremium,
+  onUpdateUserProfile,
+  onCreateOfficialMockExam,
+  onDeleteQuestion,
+  onUpdateQuestion,
 }) => {
   const [adminTab, setAdminTab] = useState<
-    "analytics" | "previous-exam-import" | "content-manager" | "pdf-converter" | "review-queue" | "activation-codes" | "users" | "broadcast" | "support"
-  >("analytics");
+    "overview" | "users" | "question-bank" | "regional-reports" | "content-manager" | "previous-exam-import" | "pdf-converter" | "activation-codes" | "broadcast" | "support"
+  >("overview");
 
   // PDF / Exam Text AI Extraction state
   const [examTitle, setExamTitle] = useState("2026 оны ЭЕШ Шинэ Хувилбар");
@@ -102,6 +116,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [analyticsRoleFilter, setAnalyticsRoleFilter] = useState<"all" | "student" | "teacher" | "admin">("all");
   const [analyticsSearch, setAnalyticsSearch] = useState("");
   const [selectedUserProgress, setSelectedUserProgress] = useState<UserProfile | null>(null);
+
+  // System Overview computed metrics
+  const totalStudents = users.filter((u) => u.role === "student").length;
+  const totalTeachers = users.filter((u) => u.role === "teacher").length;
+  const totalAdmins = users.filter((u) => u.role === "admin").length;
+  const totalQuestionsInBank = useMemo(() => {
+    const standaloneIds = new Set(questions.map((q) => q.id));
+    let examCount = 0;
+    exams.forEach((e) => {
+      (e.questions || []).forEach((q) => {
+        if (!standaloneIds.has(q.id)) {
+          examCount++;
+        }
+      });
+    });
+    return questions.length + examCount;
+  }, [exams, questions]);
+  const totalExamsTaken = submissions.length;
 
   const handleCopy = (code: string, id: string) => {
     navigator.clipboard.writeText(code);
@@ -219,131 +251,162 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* Quick Stats */}
-        <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-            <div className="text-[11px] text-slate-400 font-medium">Нийт Тестийн сан</div>
-            <div className="text-2xl font-extrabold text-purple-300 mt-1">{exams.length} шалгалт</div>
-            <div className="text-[10px] text-slate-400 mt-1">2006–2026 архивт</div>
-          </div>
+        <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Нийт хэрэглэгчид</div>
-            <div className="text-2xl font-extrabold text-blue-300 mt-1">{users.length} хэрэглэгч</div>
-            <div className="text-[10px] text-slate-400 mt-1">Сурагч, Багш нар</div>
+            <div className="text-2xl font-extrabold text-blue-300 mt-1">{users.length}</div>
+            <div className="text-[10px] text-slate-300 mt-1">
+              {totalStudents} сурагч • {totalTeachers} багш
+            </div>
+          </div>
+          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+            <div className="text-[11px] text-slate-400 font-medium">Асуултын сан</div>
+            <div className="text-2xl font-extrabold text-purple-300 mt-1">{totalQuestionsInBank} асуулт</div>
+            <div className="text-[10px] text-slate-300 mt-1">4 бүлэг, 2006–2026 сан</div>
+          </div>
+          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+            <div className="text-[11px] text-slate-400 font-medium">Өгсөн нийт шалгалт</div>
+            <div className="text-2xl font-extrabold text-emerald-300 mt-1">{totalExamsTaken} сорилт</div>
+            <div className="text-[10px] text-slate-300 mt-1">OMR цаасан & Дижитал</div>
           </div>
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Идэвхжүүлэх код</div>
-            <div className="text-2xl font-extrabold text-emerald-300 mt-1">{activationCodes.length} код</div>
-            <div className="text-[10px] text-slate-400 mt-1">365 хоногийн эрхтэй</div>
+            <div className="text-2xl font-extrabold text-amber-300 mt-1">{activationCodes.length} код</div>
+            <div className="text-[10px] text-slate-300 mt-1">365 хоногийн эрхтэй</div>
           </div>
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Гомдол хүсэлт</div>
-            <div className="text-2xl font-extrabold text-amber-300 mt-1">{supportTickets.length} тикет</div>
-            <div className="text-[10px] text-slate-400 mt-1">Шийдвэрлэлтийн түвшин 100%</div>
+            <div className="text-2xl font-extrabold text-rose-300 mt-1">{supportTickets.length} тикет</div>
+            <div className="text-[10px] text-slate-300 mt-1">Хэрэглэгчийн дэмжлэг</div>
           </div>
         </div>
       </div>
 
       {/* Admin Tab Navigation */}
-      <div className="flex border-b border-slate-200 gap-6 text-sm font-bold overflow-x-auto">
+      <div className="flex border-b border-slate-200 gap-3 text-xs font-bold overflow-x-auto pb-1 no-scrollbar">
         <button
-          onClick={() => setAdminTab("analytics")}
-          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-            adminTab === "analytics"
-              ? "border-purple-600 text-purple-600"
-              : "border-transparent text-slate-700 hover:text-slate-800"
+          onClick={() => setAdminTab("overview")}
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            adminTab === "overview"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          <span>Бүх хэрэглэгчдийн анализ & явц</span>
-        </button>
-
-        <button
-          onClick={() => setAdminTab("previous-exam-import")}
-          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-            adminTab === "previous-exam-import"
-              ? "border-purple-600 text-purple-600 font-extrabold"
-              : "border-transparent text-slate-700 hover:text-slate-800"
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-purple-600 animate-pulse" />
-          <span>2026 ЭЕШ 4 Хувилбар (A, B, C, D) Импорт & Staging</span>
-        </button>
-
-        <button
-          onClick={() => setAdminTab("content-manager")}
-          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-            adminTab === "content-manager"
-              ? "border-purple-600 text-purple-600 font-bold"
-              : "border-transparent text-slate-700 hover:text-slate-800"
-          }`}
-        >
-          <BookOpen className="w-4 h-4 text-purple-600" />
-          <span>Контент & Тест удирдлага (2006–2026 ЭЕШ, 7 хоногийн Mock, Дасгал)</span>
-        </button>
-
-        <button
-          onClick={() => setAdminTab("pdf-converter")}
-          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-            adminTab === "pdf-converter"
-              ? "border-purple-600 text-purple-600"
-              : "border-transparent text-slate-700 hover:text-slate-800"
-          }`}
-        >
-          <Upload className="w-4 h-4" />
-          <span>PDF / Текст → Digital Exam AI Хөрвүүлэгч</span>
-        </button>
-
-        <button
-          onClick={() => setAdminTab("activation-codes")}
-          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-            adminTab === "activation-codes"
-              ? "border-purple-600 text-purple-600"
-              : "border-transparent text-slate-700 hover:text-slate-800"
-          }`}
-        >
-          <Key className="w-4 h-4" />
-          <span>Activation Codes (20,000₮ / 40,000₮)</span>
+          <span>Системийн тойм (Stats)</span>
         </button>
 
         <button
           onClick={() => setAdminTab("users")}
-          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
             adminTab === "users"
-              ? "border-purple-600 text-purple-600"
-              : "border-transparent text-slate-700 hover:text-slate-800"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>Хэрэглэгчдийн эрх & Premium удирдлага</span>
+          <span>Хэрэглэгчийн удирдлага ({users.length})</span>
+        </button>
+
+        <button
+          onClick={() => setAdminTab("question-bank")}
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            adminTab === "question-bank"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          <span>Асуултын нэгдсэн сан</span>
+        </button>
+
+        <button
+          onClick={() => setAdminTab("regional-reports")}
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            adminTab === "regional-reports"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <TrendingUp className="w-4 h-4" />
+          <span>Бүсийн тайлан</span>
+        </button>
+
+        <button
+          onClick={() => setAdminTab("content-manager")}
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            adminTab === "content-manager"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>ЭЕШ Шалгалтууд</span>
+        </button>
+
+        <button
+          onClick={() => setAdminTab("previous-exam-import")}
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            adminTab === "previous-exam-import"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-purple-600" />
+          <span>2026 Импорт</span>
+        </button>
+
+        <button
+          onClick={() => setAdminTab("pdf-converter")}
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            adminTab === "pdf-converter"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <Upload className="w-4 h-4" />
+          <span>PDF AI Хөрвүүлэгч</span>
+        </button>
+
+        <button
+          onClick={() => setAdminTab("activation-codes")}
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            adminTab === "activation-codes"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <Key className="w-4 h-4" />
+          <span>Кодууд ({activationCodes.length})</span>
         </button>
 
         <button
           onClick={() => setAdminTab("broadcast")}
-          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
             adminTab === "broadcast"
-              ? "border-purple-600 text-purple-600"
-              : "border-transparent text-slate-700 hover:text-slate-800"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
           <Send className="w-4 h-4" />
-          <span>Мэдэгдэл илгээх</span>
+          <span>Зарлал</span>
         </button>
 
         <button
           onClick={() => setAdminTab("support")}
-          className={`pb-3 border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+          className={`pb-2.5 px-1 border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${
             adminTab === "support"
-              ? "border-purple-600 text-purple-600"
-              : "border-transparent text-slate-700 hover:text-slate-800"
+              ? "border-purple-600 text-purple-600 font-extrabold"
+              : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
           <MessageSquare className="w-4 h-4" />
-          <span>Гомдол, хүсэлт ({supportTickets.length})</span>
+          <span>Дэмжлэг ({supportTickets.length})</span>
         </button>
       </div>
 
       {/* TAB 0: ALL USERS ANALYTICS & PROGRESS */}
-      {adminTab === "analytics" && (
+      {adminTab === "overview" && (
         <div className="space-y-6">
           {/* Top Platform KPI Metrics */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -992,76 +1055,30 @@ Answer: C. Third conditional structure.`
         </div>
       )}
 
-      {/* TAB 3: USERS & ROLES */}
+      {/* TAB: USERS MANAGEMENT */}
       {adminTab === "users" && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Хэрэглэгчид & Эрхийн Удирдлага</h3>
-              <p className="text-xs text-slate-700">Сурагч, Багш, Админ хэрэглэгчдийн эрх болон Premium статус</p>
-            </div>
-          </div>
+        <AdminUserManagement
+          users={users}
+          onToggleUserPremium={onToggleUserPremium}
+          onUpdateUserProfile={onUpdateUserProfile || (() => {})}
+          onViewUserProgress={(user) => setSelectedUserProgress(user)}
+        />
+      )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-700">
-                  <th className="pb-3 font-semibold">Нэр</th>
-                  <th className="pb-3 font-semibold">И-мэйл</th>
-                  <th className="pb-3 font-semibold">Эрх (Role)</th>
-                  <th className="pb-3 font-semibold">Сургууль / Зэрэг</th>
-                  <th className="pb-3 font-semibold">Premium статус</th>
-                  <th className="pb-3 font-semibold text-right">Үйлдэл</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {users.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50">
-                    <td className="py-3 font-bold text-slate-900">{u.name}</td>
-                    <td className="py-3 text-slate-700">{u.email}</td>
-                    <td className="py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          u.role === "admin"
-                            ? "bg-purple-100 text-purple-700"
-                            : u.role === "teacher"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-blue-100 text-blue-700"
-                        }`}
-                      >
-                        {u.role.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="py-3 text-slate-700">{u.school || "—"}</td>
-                    <td className="py-3">
-                      {u.isPremium ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                          💎 Premium Идэвхтэй
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
-                          Үнэгүй эрхтэй
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 text-right">
-                      <button
-                        onClick={() => onToggleUserPremium(u.id)}
-                        className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${
-                          u.isPremium
-                            ? "bg-rose-50 text-rose-700 hover:bg-rose-100"
-                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                        }`}
-                      >
-                        {u.isPremium ? "Эрх хасах" : "Premium өгөх"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {/* TAB: GLOBAL QUESTION BANK */}
+      {adminTab === "question-bank" && (
+        <AdminGlobalQuestionBank
+          questions={questions}
+          exams={exams}
+          onDeleteQuestion={onDeleteQuestion}
+          onUpdateQuestion={onUpdateQuestion}
+          onCreateOfficialMockExam={onCreateOfficialMockExam}
+        />
+      )}
+
+      {/* TAB: REGIONAL REPORTS */}
+      {adminTab === "regional-reports" && (
+        <AdminRegionalReports users={users} submissions={submissions} />
       )}
 
       {/* TAB 4: BROADCAST NOTIFICATIONS */}

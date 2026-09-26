@@ -17,10 +17,54 @@ import { db } from "../lib/supabase";
 
 interface WeeklyTopStudentsWidgetProps {
   currentUser?: UserProfile;
+  submissions?: {
+    userId: string;
+    userName: string;
+    scaledScore: number;
+    percentage: number;
+    submittedAt: string;
+  }[];
 }
 
-export const WeeklyTopStudentsWidget: React.FC<WeeklyTopStudentsWidgetProps> = ({ currentUser }) => {
-  const [topStudents, setTopStudents] = useState<WeeklyTopStudent[]>(() => db.getWeeklyTopStudents());
+export const WeeklyTopStudentsWidget: React.FC<WeeklyTopStudentsWidgetProps> = ({ currentUser, submissions = [] }) => {
+  const topStudents = React.useMemo<WeeklyTopStudent[]>(() => {
+    if (submissions && submissions.length > 0) {
+      // Group by student
+      const studentMap = new Map<string, { name: string; scores: number[]; count: number; lastScore: number }>();
+      submissions.forEach((s) => {
+        if (!s.userId || s.userId === "guest-user") return;
+        const existing = studentMap.get(s.userId) || { name: s.userName || "Сурагч", scores: [], count: 0, lastScore: s.scaledScore };
+        existing.scores.push(s.scaledScore);
+        existing.count += 1;
+        studentMap.set(s.userId, existing);
+      });
+
+      const list: WeeklyTopStudent[] = [];
+      let rank = 1;
+      studentMap.forEach((val, uid) => {
+        const avg = Math.round(val.scores.reduce((a, b) => a + b, 0) / val.scores.length);
+        const max = Math.max(...val.scores);
+        const min = Math.min(...val.scores);
+        const gain = Math.max(0, max - min);
+        list.push({
+          id: uid,
+          name: val.name,
+          school: "ЭЕШ Сурагч",
+          grade: "12-р анги",
+          rank: rank++,
+          scoreGain: gain > 0 ? gain : 25,
+          testsCompletedThisWeek: val.count,
+          currentScore: max,
+          accuracyRate: Math.round((max / 800) * 100),
+          highlightTag: max >= 700 ? "700+ Тэргүүлэгч" : val.count >= 3 ? "Идэвхтэй сорилтч" : "Онооны ахицтай",
+        });
+      });
+
+      return list.sort((a, b) => b.currentScore - a.currentScore);
+    }
+    return db.getWeeklyTopStudents();
+  }, [submissions]);
+
   const [selectedStudent, setSelectedStudent] = useState<WeeklyTopStudent | null>(null);
 
   const topThree = topStudents.slice(0, 3);

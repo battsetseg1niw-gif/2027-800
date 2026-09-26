@@ -82,6 +82,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Copy code feedback
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
+  // Scope classes strictly to this teacher
+  const teacherClasses = classes.filter((c) => c.teacherId === currentUser.id);
+  const enrolledStudentIds = new Set(teacherClasses.flatMap((c) => c.studentIds || []));
+  const teacherClassIds = new Set(teacherClasses.map((c) => c.id));
+
+  // Scope assignments strictly to this teacher
+  const teacherAssignments = assignments.filter(
+    (a) => a.assignedBy === currentUser.id || (a.classId && teacherClassIds.has(a.classId))
+  );
+
+  // Scope submissions strictly to enrolled students in this teacher's classes, excluding all guests
+  const teacherScopedSubs = submissions.filter((s) => {
+    if (!s.userId || s.userId === "guest-user" || s.userId.startsWith("guest-")) return false;
+    const matchesClass = s.classId && teacherClassIds.has(s.classId);
+    const isEnrolled = enrolledStudentIds.has(s.userId);
+    return matchesClass || isEnrolled;
+  });
+
   // Teacher Detailed Analytics states
   const [selectedAnalyticsClass, setSelectedAnalyticsClass] = useState<string>("all");
   const [analyticsSearchQuery, setAnalyticsSearchQuery] = useState("");
@@ -92,11 +110,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const handleGenerateClassAiDiagnostics = async () => {
     setIsGeneratingClassAi(true);
     try {
-      const activeClass = classes.find((c) => c.id === selectedAnalyticsClass);
+      const activeClass = teacherClasses.find((c) => c.id === selectedAnalyticsClass);
       const filteredSubs =
         selectedAnalyticsClass === "all"
-          ? submissions
-          : submissions.filter((s) => s.classId === selectedAnalyticsClass);
+          ? teacherScopedSubs
+          : teacherScopedSubs.filter((s) => s.classId === selectedAnalyticsClass);
 
       const res = await fetch("/api/ai/class-diagnostics", {
         method: "POST",
@@ -216,20 +234,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Нийт ангиуд</div>
-            <div className="text-2xl font-extrabold text-emerald-300 mt-1">{classes.length} анги</div>
-            <div className="text-[10px] text-slate-400 mt-1">Идэвхтэй бүлгүүд</div>
+            <div className="text-2xl font-extrabold text-emerald-300 mt-1">{teacherClasses.length} анги</div>
+            <div className="text-[10px] text-slate-400 mt-1">Миний идэвхтэй бүлгүүд</div>
           </div>
 
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Нийт даалгавар</div>
-            <div className="text-2xl font-extrabold text-blue-300 mt-1">{assignments.length}</div>
+            <div className="text-2xl font-extrabold text-blue-300 mt-1">{teacherAssignments.length}</div>
             <div className="text-[10px] text-slate-400 mt-1">Хуваарилсан шалгалтууд</div>
           </div>
 
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <div className="text-[11px] text-slate-400 font-medium">Сурагчдын ирүүлсэн ажил</div>
-            <div className="text-2xl font-extrabold text-amber-300 mt-1">{submissions.length}</div>
-            <div className="text-[10px] text-slate-400 mt-1">Дижитал + OMR шалгалт</div>
+            <div className="text-2xl font-extrabold text-amber-300 mt-1">{teacherScopedSubs.length}</div>
+            <div className="text-[10px] text-slate-400 mt-1">Ангийн дижитал + OMR</div>
           </div>
 
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
@@ -293,7 +311,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
       {/* TAB 1: CLASSES */}
       {activeTab === "classes" && (
-        classes.length === 0 ? (
+        teacherClasses.length === 0 ? (
           <div className="bg-white rounded-2xl p-12 border border-slate-200 shadow-xs text-center space-y-4">
             <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
               <Users className="w-8 h-8" />
@@ -314,8 +332,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {classes.map((cls) => {
-              const classSubmissions = submissions.filter((s) => cls.studentIds.includes(s.userId));
+            {teacherClasses.map((cls) => {
+              const classSubmissions = teacherScopedSubs.filter((s) => cls.studentIds.includes(s.userId));
               const avgScore =
                 classSubmissions.length > 0
                   ? Math.round(
@@ -368,6 +386,44 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </div>
                   </div>
 
+                  {/* Student Submissions and Scores under this specific class */}
+                  <div className="pt-3 border-t border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                      <span>Сурагчдын даалгавар, сорилын оноо ({classSubmissions.length}):</span>
+                      {classSubmissions.length > 0 && (
+                        <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-md">
+                          Шилдэг: {Math.max(...classSubmissions.map((s) => s.scaledScore))} оноо
+                        </span>
+                      )}
+                    </div>
+
+                    {classSubmissions.length === 0 ? (
+                      <div className="text-[11px] text-slate-400 italic py-1.5 bg-slate-50/60 rounded-xl px-2.5 text-center">
+                        Энэ ангийн сурагчдын ирүүлсэн даалгаврын үр дүн энд автоматаар харагдана.
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {classSubmissions.slice(0, 8).map((sub) => (
+                          <div
+                            key={sub.id}
+                            className="p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs hover:bg-slate-100/70 transition-colors"
+                          >
+                            <div className="truncate max-w-[170px]">
+                              <div className="font-bold text-slate-900 truncate">{sub.userName || "Сурагч"}</div>
+                              <div className="text-[10px] text-slate-500 truncate">{sub.examTitle}</div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 font-black text-xs">
+                                {sub.scaledScore} оноо
+                              </span>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{sub.submittedAt.slice(0, 10)}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex items-center gap-2 pt-2">
                     <button
                       onClick={() => {
@@ -407,13 +463,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </button>
           </div>
 
-          {assignments.length === 0 ? (
+          {teacherAssignments.length === 0 ? (
             <div className="py-10 text-center text-slate-500 text-xs">
               Одоогоор өгсөн даалгавар байхгүй байна. "Шинэ даалгавар" товчийг дарж шалгалт хуваарилна уу.
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {assignments.map((asg) => (
+              {teacherAssignments.map((asg) => (
                 <div key={asg.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -451,8 +507,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
       {/* TAB 3: CLASS ANALYTICS & EXCEL */}
       {activeTab === "analytics" && (() => {
-        // Analytics calculations
-        const filteredSubmissions = submissions.filter((sub) => {
+        // Analytics calculations strictly scoped to this teacher's enrolled students
+        const filteredSubmissions = teacherScopedSubs.filter((sub) => {
           if (selectedAnalyticsClass !== "all" && sub.classId !== selectedAnalyticsClass) return false;
           if (analyticsSearchQuery.trim()) {
             const q = analyticsSearchQuery.toLowerCase();
@@ -548,8 +604,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     onChange={(e) => setSelectedAnalyticsClass(e.target.value)}
                     className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-slate-50"
                   >
-                    <option value="all">Бүх ангиуд (Нийт {classes.length})</option>
-                    {classes.map((cls) => (
+                    <option value="all">Бүх ангиуд (Нийт {teacherClasses.length})</option>
+                    {teacherClasses.map((cls) => (
                       <option key={cls.id} value={cls.id}>
                         {cls.name}
                       </option>
@@ -880,7 +936,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     {filteredSubmissions.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="p-8 text-center text-slate-500">
-                          Шалгалт бүртгэгдээгүй эсвэл хайлтад тохирох сурагч олдсонгүй.
+                          Одоогоор таны ангид бүртгэлтэй сурагч шалгалт өгөөгүй байна. Та сурагчдаа ангийн кодоор элсүүлнэ үү.
                         </td>
                       </tr>
                     ) : (

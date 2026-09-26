@@ -19,11 +19,13 @@ import {
   Compass,
   Layers,
   X,
+  Edit3,
 } from "lucide-react";
 import { UserProfile, Exam, Assignment, ExamSubmission, MistakeItem, ClassRoom, StudentBadge } from "../types";
 import { DailyVocabularyWidget } from "./DailyVocabularyWidget";
 import { WeeklyTopStudentsWidget } from "./WeeklyTopStudentsWidget";
 import { StudentMilestoneBadges } from "./StudentMilestoneBadges";
+import { StudentTopicProgressChart } from "./StudentTopicProgressChart";
 import { calculateStudentBadges } from "../lib/badgeEngine";
 
 interface StudentDashboardProps {
@@ -41,6 +43,7 @@ interface StudentDashboardProps {
   onOpenLearningCenter: () => void;
   onOpenArchive: () => void;
   onOpenCustomTest?: () => void;
+  onUpdateTargetScore?: (newScore: number) => Promise<void> | void;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -58,10 +61,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   onOpenLearningCenter,
   onOpenArchive,
   onOpenCustomTest,
+  onUpdateTargetScore,
 }) => {
   const [classCodeInput, setClassCodeInput] = useState("");
   const [joinMsg, setJoinMsg] = useState<{ text: string; success: boolean } | null>(null);
   const [selectedAiReportSub, setSelectedAiReportSub] = useState<ExamSubmission | null>(null);
+  const [isEditingTarget, setIsEditingTarget] = useState(false);
+  const [targetInput, setTargetInput] = useState<number>(currentUser.targetEshScore || 800);
+  const [isSavingTarget, setIsSavingTarget] = useState(false);
 
   // Strictly filter to current student's performance data
   const mySubmissions = useMemo(
@@ -93,7 +100,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     ? Math.round(mySubmissions.reduce((acc, curr) => acc + curr.scaledScore, 0) / totalSubmissions)
     : 0;
 
-  const targetScore = currentUser.targetEshScore || 720;
+  const targetScore = currentUser.targetEshScore || 800;
   const scoreGap = targetScore - averageScaledScore;
 
   // Real display name: use profile name or email prefix, never mock names
@@ -126,6 +133,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 3)
     .map(([topic, data]) => ({ topic, category: data.category, count: data.count }));
+
+  // Classes that this student is enrolled in
+  const myEnrolledClasses = useMemo(() => {
+    return classes.filter(
+      (c) =>
+        c.studentIds.includes(currentUser.id) ||
+        (currentUser.classCodes && currentUser.classCodes.includes(c.code))
+    );
+  }, [classes, currentUser]);
+
+  const myEnrolledClassIds = useMemo(
+    () => new Set(myEnrolledClasses.map((c) => c.id)),
+    [myEnrolledClasses]
+  );
+
+  // Active Homework for enrolled classes (or all assignments if none joined yet)
+  const studentAssignments = useMemo(() => {
+    if (myEnrolledClassIds.size === 0) {
+      return assignments;
+    }
+    return assignments.filter(
+      (a) =>
+        myEnrolledClassIds.has(a.classId) ||
+        !a.classId ||
+        a.assignedStudentIds?.includes(currentUser.id)
+    );
+  }, [assignments, myEnrolledClassIds, currentUser.id]);
 
   const handleJoinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,13 +250,48 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </div>
           </div>
 
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-            <div className="text-[11px] text-slate-400 font-medium">Зорилтот оноо</div>
-            <div className="text-2xl font-extrabold text-emerald-300 mt-1">{targetScore}</div>
-            <div className="text-[10px] text-emerald-400 mt-1">
-              {hasSubmissions
-                ? (scoreGap > 0 ? `${scoreGap} онооны зөрүүтэй` : "Зорилтодоо хүрсэн!")
-                : "Хүрэх ЭЕШ оноо"}
+          <div className="bg-white/5 rounded-2xl p-4 border border-white/10 relative group">
+            <div className="text-[11px] text-slate-400 font-medium flex items-center justify-between">
+              <span>Зорилтот оноо</span>
+              <button
+                id="btn-edit-target-score"
+                onClick={() => {
+                  setTargetInput(targetScore);
+                  setIsEditingTarget(true);
+                }}
+                className="text-emerald-400 hover:text-emerald-300 p-1 rounded-md hover:bg-white/10 transition-colors"
+                title="Зорилтот оноогоо өөрчлөх"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div
+              onClick={() => {
+                setTargetInput(targetScore);
+                setIsEditingTarget(true);
+              }}
+              className="text-2xl font-extrabold text-emerald-300 mt-1 cursor-pointer hover:text-emerald-200 transition-colors flex items-baseline gap-1"
+            >
+              <span>{targetScore}</span>
+              <span className="text-xs text-emerald-400/80 font-normal">/ 800</span>
+            </div>
+            <div className="text-[10px] text-emerald-400 mt-1 flex items-center justify-between">
+              <span>
+                {hasSubmissions
+                  ? scoreGap > 0
+                    ? `${scoreGap} онооны зөрүүтэй`
+                    : "Зорилтодоо хүрсэн! 🎉"
+                  : "Хүрэх ЭЕШ оноо"}
+              </span>
+              <button
+                onClick={() => {
+                  setTargetInput(targetScore);
+                  setIsEditingTarget(true);
+                }}
+                className="text-[10px] text-emerald-300 hover:text-white underline ml-1"
+              >
+                Өөрчлөх
+              </button>
             </div>
           </div>
 
@@ -273,6 +342,21 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           onOpenLearningCenter={onOpenLearningCenter}
         />
       </div>
+
+      {/* TOPIC MASTERY & PROGRESS ANALYTICS (RECHARTS) */}
+      <StudentTopicProgressChart
+        submissions={mySubmissions}
+        targetScore={targetScore}
+        onStartExam={() => {
+          if (diagnosticExam) {
+            onStartExam(diagnosticExam, "diagnostic");
+          } else if (latestMock) {
+            onStartExam(latestMock, "mock");
+          } else {
+            onOpenArchive();
+          }
+        }}
+      />
 
 
       {/* AI Analysis & Topic Recommendations Card */}
@@ -439,12 +523,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-blue-600" />
-              <h2 className="text-base font-bold text-slate-900">Багшаас өгсөн даалгаврууд</h2>
+              <h2 className="text-base font-bold text-slate-900">Идэвхтэй Даалгавар (Active Homework)</h2>
             </div>
-            <span className="text-xs font-semibold text-slate-700">{assignments.length} даалгавар</span>
+            <span className="text-xs font-semibold text-slate-700">{studentAssignments.length} даалгавар</span>
           </div>
 
-          {assignments.length === 0 ? (
+          {studentAssignments.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-3">
               <Users className="w-10 h-10 text-slate-700 mx-auto" />
               <h3 className="text-sm font-bold text-slate-700">Одоогоор идэвхтэй даалгавар байхгүй байна</h3>
@@ -454,7 +538,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-3">
-              {assignments.map((asg) => {
+              {studentAssignments.map((asg) => {
                 const targetExam = exams.find((e) => e.id === asg.examId) || exams[0];
                 return (
                   <div
@@ -480,7 +564,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                     <button
                       onClick={() => onStartExam(targetExam, "mock")}
-                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors whitespace-nowrap"
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors whitespace-nowrap cursor-pointer"
                     >
                       <Play className="w-3.5 h-3.5 fill-white" />
                       <span>Даалгавар ажиллах</span>
@@ -676,7 +760,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       </div>
 
       {/* WEEKLY TOP & MOST IMPROVED STUDENTS LEADERBOARD */}
-      <WeeklyTopStudentsWidget currentUser={currentUser} />
+      <WeeklyTopStudentsWidget currentUser={currentUser} submissions={submissions} />
 
       {/* Recent Submissions List */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
@@ -908,6 +992,102 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors"
               >
                 Хаах
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Target Score Edit Modal */}
+      {isEditingTarget && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 w-full max-w-sm text-white shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Target className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold">Зорилтот оноо тохируулах</h3>
+              </div>
+              <button
+                onClick={() => setIsEditingTarget(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Та 200–800 хооронд өөрийн хүрэхийг зорьж буй ЭЕШ-ийн зорилтот оноогоо тохируулна уу. Энэ нь Supabase дээрх таны профайлд хадгалагдах болно.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">
+                  Таны зорилтот оноо (200 - 800)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min={200}
+                    max={800}
+                    step={10}
+                    value={targetInput}
+                    onChange={(e) => setTargetInput(Number(e.target.value))}
+                    className="w-full bg-slate-800 border border-slate-700 focus:border-emerald-500 rounded-xl px-4 py-3 text-lg font-black text-emerald-300 outline-none transition-colors"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">
+                    / 800
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Select Presets */}
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-[10px] text-slate-400">Хурдан сонгох:</span>
+                {[650, 700, 750, 800].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setTargetInput(val)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors ${
+                      targetInput === val
+                        ? "bg-emerald-500 text-slate-950 border-emerald-400"
+                        : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                    }`}
+                  >
+                    {val}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsEditingTarget(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors"
+              >
+                Цуцлах
+              </button>
+              <button
+                type="button"
+                disabled={isSavingTarget}
+                onClick={async () => {
+                  const val = Math.max(200, Math.min(800, Number(targetInput) || 800));
+                  setIsSavingTarget(true);
+                  try {
+                    if (onUpdateTargetScore) {
+                      await onUpdateTargetScore(val);
+                    }
+                    setIsEditingTarget(false);
+                  } finally {
+                    setIsSavingTarget(false);
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-colors disabled:opacity-50 shadow-lg shadow-emerald-500/20"
+              >
+                {isSavingTarget ? "Хадгалж байна..." : "Хадгалах"}
               </button>
             </div>
           </div>

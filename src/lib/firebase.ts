@@ -36,8 +36,14 @@ export async function testFirestoreConnection(): Promise<boolean> {
     await getDocFromServer(doc(firestore, "test", "connection"));
     return true;
   } catch (error) {
-    if (error instanceof Error && error.message.includes("the client is offline")) {
-      console.warn("Please check your Firebase configuration or network status.");
+    if (
+      error instanceof Error &&
+      (error.message.includes("the client is offline") ||
+        error.message.includes("unavailable") ||
+        error.message.includes("Could not reach Cloud Firestore backend"))
+    ) {
+      // Gracefully acknowledge offline capability as designed by Firestore SDK
+      console.info("Firestore status: client operating in offline mode until network connection reaches backend.");
     }
     return false;
   }
@@ -133,7 +139,10 @@ export async function syncBadgesToFirestore(
   badges: StudentBadge[],
   stats: { totalExams: number; topScore: number; mistakesFixed: number }
 ): Promise<void> {
-  if (!userId) return;
+  // Only sync to Firestore if Firebase Auth user is actively signed in and matches the userId
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) {
+    return;
+  }
 
   const userDocPath = `users/${userId}`;
   try {
@@ -182,7 +191,8 @@ export async function syncBadgesToFirestore(
 
 // 6. Fetch Student Badges from Firestore
 export async function fetchUserBadgesFromFirestore(userId: string): Promise<Record<string, string>> {
-  if (!userId) return {};
+  // Only query Firestore if authenticated with Firebase Auth
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) return {};
   const path = `users/${userId}/badges`;
   try {
     const snap = await getDocs(collection(firestore, "users", userId, "badges"));

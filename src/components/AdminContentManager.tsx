@@ -65,56 +65,15 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
   const [pastPassage, setPastPassage] = useState(
     "The Mongolian saiga antelope (Saiga tatarica mongolica) is a critically endangered subspecies endemic to western Mongolia. Conservation efforts in recent years have demonstrated promising outcomes in habitat restoration and anti-poaching patrol monitoring. However, extreme winters (dzud) and forage shortages continue to pose substantial threats to the remaining herds."
   );
-  const [pastPaperQuestions, setPastPaperQuestions] = useState<Question[]>(() =>
-    generateStandard50Questions(2025, "A")
-  );
+  const [pastPaperQuestions, setPastPaperQuestions] = useState<Question[]>([]);
 
   function generateStandard50Questions(year: number, variant: string): Question[] {
-    return Array.from({ length: 50 }).map((_, idx) => {
-      const qNum = idx + 1;
-      const isGrammar = qNum <= 15;
-      const isVocab = qNum > 15 && qNum <= 28;
-      const isComm = qNum > 28 && qNum <= 37;
-      const isReading = qNum > 37;
-
-      const cat: "Grammar" | "Vocabulary" | "Communication" | "Reading" = isGrammar
-        ? "Grammar"
-        : isVocab
-        ? "Vocabulary"
-        : isComm
-        ? "Communication"
-        : "Reading";
-
-      return {
-        id: `past-esh-${year}-${variant}-q${qNum}`,
-        questionNumber: qNum,
-        text: isGrammar
-          ? `[Grammar Q${qNum}] Select the correct grammatical structure to complete the sentence.`
-          : isVocab
-          ? `[Vocabulary Q${qNum}] Identify the word or phrase that best fits the contextual meaning.`
-          : isComm
-          ? `[Communication Q${qNum}] Choose the most appropriate conversational response.`
-          : `[Reading Q${qNum}] Based on paragraph ${Math.min(3, Math.ceil((qNum - 37) / 4))}, what is directly stated?`,
-        category: cat,
-        topic: `${year} ЭЕШ Хувилбар ${variant} - ${cat}`,
-        subtopic: `Question ${qNum}`,
-        difficulty: (qNum % 3 === 0 ? "Hard" : qNum % 2 === 0 ? "Medium" : "Easy") as any,
-        options: [
-          { id: "A", text: `Option A (${cat})` },
-          { id: "B", text: `Option B (${cat})` },
-          { id: "C", text: `Option C (${cat})` },
-          { id: "D", text: `Option D (${cat})` },
-          { id: "E", text: `Option E (${cat})` },
-        ],
-        correctAnswer: (["A", "B", "C", "D", "E"][idx % 5] as any),
-        explanation: `${year} оны ЭЕШ-ийн албан ёсны түлхүүр: Асуулт №${qNum} нь ${cat} чиглэлийн стандарт даалгавар юм.`,
-      };
-    });
+    return [];
   }
 
   const handleReloadPastTemplate = () => {
-    setPastPaperQuestions(generateStandard50Questions(pastYear, pastVariant));
-    showToast(`${pastYear} оны Хувилбар ${pastVariant}-н 50 тестийн загвар ачаалагдлаа.`);
+    setPastPaperQuestions([]);
+    showToast(`${pastYear} оны Хувилбар ${pastVariant}-н тестийн загвар цэвэрлэгдлээ.`);
   };
 
   const handlePublishPastPaper = () => {
@@ -149,9 +108,7 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
   const [mockPassage, setMockPassage] = useState(
     "Artificial intelligence models have transformed modern language pedagogy. By assessing nuanced grammar patterns, lexical diversity, and reading comprehension levels in real-time, digital tutors provide immediate, hyper-personalized diagnostics to candidates preparing for high-stakes national matriculation exams."
   );
-  const [mockQuestions, setMockQuestions] = useState<Question[]>(() =>
-    generateStandard50Questions(2026, "Mock")
-  );
+  const [mockQuestions, setMockQuestions] = useState<Question[]>([]);
   const [isGeneratingMockAi, setIsGeneratingMockAi] = useState(false);
 
   const handleAddMockQuestion = () => {
@@ -227,42 +184,7 @@ export const AdminContentManager: React.FC<AdminContentManagerProps> = ({
     "Grammar" | "Vocabulary" | "Communication" | "Reading"
   >("Grammar");
   const [practiceDuration, setPracticeDuration] = useState(30);
-  const [practiceQuestions, setPracticeQuestions] = useState<Question[]>([
-    {
-      id: "pq-1",
-      questionNumber: 1,
-      text: "By the time the teacher arrived, the students _______ the assignment.",
-      category: "Grammar",
-      topic: "Past Perfect vs Past Simple",
-      subtopic: "Sequence of Tenses",
-      difficulty: "Medium",
-      options: [
-        { id: "A", text: "have finished" },
-        { id: "B", text: "had finished" },
-        { id: "C", text: "finish" },
-        { id: "D", text: "were finishing" },
-      ],
-      correctAnswer: "B",
-      explanation: "Өнгөрсөнд болсон хоёр үйлдлийн түрүүлж болсон дээр Past Perfect (had + V3) ашиглана.",
-    },
-    {
-      id: "pq-2",
-      questionNumber: 2,
-      text: "If she _______ more diligently, she would have passed the examination.",
-      category: "Grammar",
-      topic: "Third Conditional",
-      subtopic: "Past Unreal Condition",
-      difficulty: "Hard",
-      options: [
-        { id: "A", text: "studied" },
-        { id: "B", text: "studies" },
-        { id: "C", text: "had studied" },
-        { id: "D", text: "would study" },
-      ],
-      correctAnswer: "C",
-      explanation: "Гуравдугаар төрлийн нөхцөлт өгүүлбэрийн If-clause нь Past Perfect (had studied) бүтэцтэй байна.",
-    },
-  ]);
+  const [practiceQuestions, setPracticeQuestions] = useState<Question[]>([]);
 
   const handleAddPracticeQuestion = () => {
     const num = practiceQuestions.length + 1;

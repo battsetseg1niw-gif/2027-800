@@ -21,11 +21,25 @@ import {
   supabaseSignOut,
   fetchUserProfileFromSupabase,
   fetchUserSubmissionsFromSupabase,
+  fetchTeacherSubmissionsFromSupabase,
+  fetchAllSubmissionsFromSupabase,
+  fetchAllUsersFromSupabase,
+  fetchUserMistakesFromSupabase,
+  fetchExamsFromSupabase,
+  fetchQuestionsFromSupabase,
+  saveSubmissionToSupabase,
+  saveMistakeToSupabase,
+  updateUserTargetScoreInSupabase,
+  updateUserProfileInSupabase,
+  deleteQuestionFromSupabase,
+  updateQuestionInSupabase,
+  LocalDatabaseStore,
 } from "./lib/supabase";
 import {
   Role,
   UserProfile,
   Exam,
+  Question,
   Assignment,
   ExamSubmission,
   MistakeItem,
@@ -56,12 +70,22 @@ export default function App() {
     } catch {}
     return "student";
   });
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    try {
+      const path = window.location.pathname.toLowerCase();
+      if (path === "/admin" || path.startsWith("/admin/") || window.location.hash === "#admin") {
+        return "admin";
+      }
+    } catch {}
+    return "dashboard";
+  });
+  const [adminAccessDeniedToast, setAdminAccessDeniedToast] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [studentBadges, setStudentBadges] = useState<StudentBadge[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<ExamSubmission[]>([]);
@@ -128,6 +152,41 @@ export default function App() {
     });
   };
 
+  const syncUserData = async (userId: string, role?: Role) => {
+    try {
+      const userRole = role || currentUser?.role || "student";
+      if (userRole === "admin") {
+        const allProfiles = await fetchAllUsersFromSupabase();
+        setUsers(allProfiles);
+        const allSubs = await fetchAllSubmissionsFromSupabase();
+        setSubmissions(allSubs);
+        const allQuestions = await fetchQuestionsFromSupabase();
+        setQuestions(allQuestions);
+      } else if (userRole === "teacher") {
+        // Strictly isolate teacher data: only enrolled students
+        const currentClasses = db.getClasses().filter((c) => c.teacherId === userId);
+        const enrolledIds = Array.from(new Set(currentClasses.flatMap((c) => c.studentIds || [])));
+        if (enrolledIds.length > 0) {
+          const teacherSubs = await fetchTeacherSubmissionsFromSupabase(userId, enrolledIds);
+          setSubmissions(teacherSubs);
+        } else {
+          setSubmissions([]);
+        }
+        setUsers([]); // Teachers never see global users
+        setMistakes([]);
+      } else {
+        // Strictly isolate student data: user_id = current_user.id
+        const remoteSubs = await fetchUserSubmissionsFromSupabase(userId);
+        setSubmissions(remoteSubs);
+        const remoteMistakes = await fetchUserMistakesFromSupabase(userId);
+        setMistakes(remoteMistakes);
+        setUsers([]); // Students never see global users
+      }
+    } catch (err) {
+      console.warn("Failed syncing remote user data:", err);
+    }
+  };
+
   // Initialize data from local DB store
   useEffect(() => {
     refreshData();
@@ -137,34 +196,35 @@ export default function App() {
   useEffect(() => {
     let isSubscribed = true;
 
-    const syncSubmissionsForUser = async (userId: string) => {
+    const loadRemoteExams = async () => {
       try {
-        const remoteSubs = await fetchUserSubmissionsFromSupabase(userId);
-        if (remoteSubs && remoteSubs.length > 0) {
-          const currentSubs = db.getSubmissions();
-          const existingIds = new Set(currentSubs.map((s) => s.id));
-          const newOnes = remoteSubs.filter((s) => !existingIds.has(s.id));
-          if (newOnes.length > 0) {
-            const merged = [...newOnes, ...currentSubs];
-            db.saveSubmissions(merged);
-            setSubmissions(merged);
-          }
+        const remoteExams = await fetchExamsFromSupabase();
+        if (remoteExams && isSubscribed) {
+          db.saveExams(remoteExams);
+          setExams(remoteExams);
+        }
+        const remoteQuestions = await fetchQuestionsFromSupabase();
+        if (remoteQuestions && isSubscribed) {
+          setQuestions(remoteQuestions);
         }
       } catch (err) {
-        console.warn("Failed syncing remote submissions:", err);
+        console.warn("loadRemoteExams error:", err);
       }
     };
+
+    loadRemoteExams();
 
     const checkSession = async () => {
       if (!supabase) return;
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && isSubscribed) {
+          LocalDatabaseStore.clearGuestData();
           const profile = await fetchUserProfileFromSupabase(session.user.id, session.user);
           if (profile && isSubscribed) {
             setCurrentUser(profile);
             setActiveRole(profile.role);
-            syncSubmissionsForUser(profile.id);
+            syncUserData(profile.id, profile.role);
           }
         }
       } catch (err) {
@@ -177,15 +237,20 @@ export default function App() {
     if (supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (session?.user && isSubscribed) {
+          LocalDatabaseStore.clearGuestData();
           const profile = await fetchUserProfileFromSupabase(session.user.id, session.user);
           if (profile && isSubscribed) {
             setCurrentUser(profile);
             setActiveRole(profile.role);
-            syncSubmissionsForUser(profile.id);
+            syncUserData(profile.id, profile.role);
           }
         } else if (event === "SIGNED_OUT" && isSubscribed) {
+          LocalDatabaseStore.clearGuestData();
           setCurrentUser(null);
           setActiveRole("student");
+          setSubmissions([]);
+          setMistakes([]);
+          setUsers([]);
         }
       });
 
@@ -195,6 +260,49 @@ export default function App() {
       };
     }
   }, []);
+
+  // Strict Admin Route Protection: /admin
+  useEffect(() => {
+    const enforceAdminProtection = () => {
+      const path = window.location.pathname.toLowerCase();
+      const isAdminRoute = activeTab === "admin" || path === "/admin" || path.startsWith("/admin/") || window.location.hash === "#admin";
+
+      if (isAdminRoute) {
+        const isAdmin = currentUser?.role === "admin" || (currentUser && currentUser.email?.toLowerCase() === "battsetsegb615@gmail.com");
+        if (!isAdmin) {
+          // Block non-admin user and redirect to home/dashboard
+          console.warn("Restricted route /admin: Current user is not admin. Redirecting to home/dashboard.");
+          if (window.location.pathname !== "/") {
+            window.history.replaceState(null, "", "/");
+          }
+          if (activeTab === "admin") {
+            setActiveTab("dashboard");
+          }
+          setAdminAccessDeniedToast(true);
+          const t = setTimeout(() => setAdminAccessDeniedToast(false), 5000);
+          return () => clearTimeout(t);
+        } else {
+          // Authorized admin user
+          if (window.location.pathname !== "/admin") {
+            window.history.pushState(null, "", "/admin");
+          }
+        }
+      } else {
+        if (window.location.pathname === "/admin") {
+          window.history.replaceState(null, "", "/");
+        }
+      }
+    };
+
+    enforceAdminProtection();
+
+    const handlePopState = () => {
+      enforceAdminProtection();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [activeTab, currentUser]);
 
   // Compute and persist student milestone badges
   useEffect(() => {
@@ -224,12 +332,16 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
+      LocalDatabaseStore.clearGuestData();
       await supabaseSignOut();
       await signOutUser();
       setFirebaseUser(null);
       setCurrentUser(null);
       setActiveRole("student");
       setActiveTab("dashboard");
+      setSubmissions([]);
+      setMistakes([]);
+      setUsers([]);
     } catch (err) {
       console.error("Supabase sign out error:", err);
     }
@@ -237,10 +349,15 @@ export default function App() {
 
   const handleAuthSuccess = async (authUser: any) => {
     setShowAuthModal(false);
+    LocalDatabaseStore.clearGuestData();
+    setSubmissions([]);
+    setMistakes([]);
     const profile = await fetchUserProfileFromSupabase(authUser.id, authUser);
     if (profile) {
       setCurrentUser(profile);
       setActiveRole(profile.role);
+      setActiveTab("dashboard");
+      syncUserData(profile.id, profile.role);
     }
   };
 
@@ -269,7 +386,7 @@ export default function App() {
     grade: "12-р анги",
     isPremium: false,
     joinedAt: new Date().toISOString().slice(0, 10),
-    targetEshScore: 650,
+    targetEshScore: 800,
   };
 
   // Student: Start exam
@@ -278,14 +395,92 @@ export default function App() {
   };
 
   // Student: Finish exam
-  const handleFinishExam = (submission: ExamSubmission) => {
-    db.saveSubmission(submission);
-    setSubmissions(db.getSubmissions());
+  const handleFinishExam = async (submission: ExamSubmission) => {
+    const isGuest = !currentUser || submission.userId === "guest-user" || submission.userId.startsWith("guest-");
 
-    // Record mistakes for questions that were wrong and mark clean correct questions as mastered
+    if (isGuest) {
+      // STRICT GUEST ISOLATION: Save only to temporary guest storage on local device
+      LocalDatabaseStore.saveGuestSubmission(submission);
+
+      const targetExam =
+        exams.find((e) => e.id === submission.examId) || activeExamSession?.exam;
+      if (targetExam && targetExam.questions && targetExam.questions.length > 0) {
+        targetExam.questions.forEach((q) => {
+          const userAns = submission.answers[q.questionNumber];
+          if (userAns && userAns !== q.correctAnswer) {
+            LocalDatabaseStore.saveGuestMistake({
+              id: `guest-mis-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              userId: "guest-user",
+              questionId: q.id,
+              examId: targetExam.id,
+              examTitle: targetExam.title,
+              question: q,
+              userAnswer: userAns,
+              userLastAnswer: userAns,
+              correctAnswer: q.correctAnswer,
+              date: new Date().toISOString().slice(0, 10),
+              smartFeedback: q.explanation || "ЭЕШ зөв хариултын тайлбар.",
+              resolved: false,
+              mistakeCount: 1,
+              masteryLevel: "learning",
+            });
+          }
+        });
+      }
+
+      setSubmissions([submission]);
+      setMistakes(LocalDatabaseStore.getGuestMistakes());
+      return;
+    }
+
+    // Authenticated user: bind current user credentials
+    submission.userId = currentUser.id;
+    submission.userName = currentUser.name;
+
+    // Match assignment if this exam was assigned to a class
+    const matchedAssignment = assignments.find(
+      (a) => a.examId === submission.examId || a.id === (submission as any).assignmentId
+    );
+    if (matchedAssignment) {
+      submission.classId = matchedAssignment.classId;
+      submission.assignmentId = matchedAssignment.id;
+
+      // Mark assignment as completed by this student
+      if (!matchedAssignment.completedStudentIds?.includes(currentUser.id)) {
+        matchedAssignment.completedStudentIds = [
+          ...(matchedAssignment.completedStudentIds || []),
+          currentUser.id,
+        ];
+        const updatedAsgs = assignments.map((a) =>
+          a.id === matchedAssignment.id ? matchedAssignment : a
+        );
+        db.saveAssignments(updatedAsgs);
+        setAssignments(updatedAsgs);
+      }
+    } else {
+      // Find any class the student is enrolled in
+      const enrolledClass = classes.find(
+        (c) =>
+          c.studentIds.includes(currentUser.id) ||
+          (currentUser.classCodes && currentUser.classCodes.includes(c.code))
+      );
+      if (enrolledClass) {
+        submission.classId = enrolledClass.id;
+      }
+    }
+
+    // 1. Save to local DB store
+    db.saveSubmission(submission);
+
+    // 2. Persist to live Supabase database
+    saveSubmissionToSupabase(submission).catch((err) => {
+      console.warn("Could not save submission to Supabase:", err);
+    });
+
+    // 3. Record mistakes for questions that were wrong and mark clean correct questions as mastered
     const targetExam =
       exams.find((e) => e.id === submission.examId) || activeExamSession?.exam;
-    if (targetExam) {
+    if (targetExam && targetExam.questions && targetExam.questions.length > 0) {
       targetExam.questions.forEach((q) => {
         const userAns = submission.answers[q.questionNumber];
         if (userAns) {
@@ -302,10 +497,45 @@ export default function App() {
               userLastAnswer: userAns,
               smartFeedback: q.explanation || "ЭЕШ-ийн зөв хариултын дүрэм ба тайлбар.",
             });
+            saveMistakeToSupabase({
+              id: `mis-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+              userId: submission.userId,
+              examId: targetExam.id,
+              examTitle: targetExam.title,
+              questionId: q.id,
+              question: q,
+              userAnswer: userAns,
+              userLastAnswer: userAns,
+              correctAnswer: q.correctAnswer,
+              date: new Date().toISOString().slice(0, 10),
+              smartFeedback: q.explanation || "ЭЕШ-ийн зөв хариултын дүрэм ба тайлбар.",
+              resolved: false,
+              mistakeCount: 1,
+              masteryLevel: "learning",
+            }).catch((e) => console.warn("Supabase mistake sync:", e));
           }
         }
       });
-      setMistakes(db.getMistakes());
+    }
+
+    // 4. Update React state for this student
+    setSubmissions(db.getSubmissions(currentUser.id));
+    setMistakes(db.getMistakes(currentUser.id));
+
+    // 5. Sync from Supabase
+    try {
+      const remoteSubs = await fetchUserSubmissionsFromSupabase(currentUser.id);
+      if (remoteSubs && remoteSubs.length > 0) {
+        db.saveSubmissions(remoteSubs);
+        setSubmissions(remoteSubs);
+      }
+      const remoteMistakes = await fetchUserMistakesFromSupabase(currentUser.id);
+      if (remoteMistakes && remoteMistakes.length > 0) {
+        db.saveMistakes(remoteMistakes);
+        setMistakes(remoteMistakes);
+      }
+    } catch (e) {
+      // ignore
     }
   };
 
@@ -566,6 +796,89 @@ export default function App() {
     setMistakes(db.getMistakes());
   };
 
+  // Student: Update Target Score and sync to Supabase profiles
+  const handleUpdateTargetScore = async (newScore: number) => {
+    if (!currentUser) return;
+    const clamped = Math.max(200, Math.min(800, newScore));
+    const updatedUser = { ...currentUser, targetEshScore: clamped };
+    setCurrentUser(updatedUser);
+    db.updateTargetScore(currentUser.id, clamped);
+    await updateUserTargetScoreInSupabase(currentUser.id, clamped);
+  };
+
+  // Admin: Update user profile (role, school, aimag, sum)
+  const handleUpdateUserProfile = async (userId: string, updates: Partial<UserProfile>) => {
+    await updateUserProfileInSupabase(userId, updates);
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, ...updates } : u)));
+    if (currentUser?.id === userId) {
+      setCurrentUser({ ...currentUser, ...updates });
+      if (updates.role) {
+        setActiveRole(updates.role);
+      }
+    }
+  };
+
+  // Admin: Create official mock exam assigned to all students
+  const handleCreateOfficialMockExam = async (newExam: Exam) => {
+    db.addExam(newExam);
+    setExams(db.getExams());
+
+    // Create assignments for all classes
+    classes.forEach((cls) => {
+      handleCreateAssignment(
+        newExam.title,
+        cls.id,
+        newExam.id,
+        new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+        newExam.durationMinutes || 80
+      );
+    });
+
+    // Broadcast notification to all students
+    handleSendNotification(
+      `Шинэ Албан ёсны Жишиг Шалгалт: ${newExam.title}`,
+      "Улсын хэмжээний ЭЕШ жишиг шалгалт амжилттай нийтлэгдлээ. Бүх сурагчид өөрийн самбараас шалгалтаа өгнө үү!",
+      "student"
+    );
+  };
+
+  // Admin: Delete question from bank
+  const handleDeleteQuestion = async (questionId: string) => {
+    await deleteQuestionFromSupabase(questionId);
+    setExams(db.getExams());
+  };
+
+  // Admin: Update question in bank
+  const handleUpdateQuestion = async (q: Question) => {
+    await updateQuestionInSupabase(q);
+    setExams(db.getExams());
+  };
+
+  const handleTabChange = (tab: string) => {
+    if (tab === "admin") {
+      const isAdmin = currentUser?.role === "admin" || (currentUser && currentUser.email?.toLowerCase() === "battsetsegb615@gmail.com");
+      if (!isAdmin) {
+        setAdminAccessDeniedToast(true);
+        setTimeout(() => setAdminAccessDeniedToast(false), 5000);
+        setActiveTab("dashboard");
+        if (window.location.pathname !== "/") {
+          window.history.replaceState(null, "", "/");
+        }
+        return;
+      }
+      window.history.pushState(null, "", "/admin");
+      setActiveTab("admin");
+      setActiveExamSession(null);
+      return;
+    }
+
+    if (window.location.pathname === "/admin") {
+      window.history.pushState(null, "", "/");
+    }
+    setActiveTab(tab);
+    setActiveExamSession(null);
+  };
+
   return (
     <div
       className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white transition-colors duration-200"
@@ -576,10 +889,7 @@ export default function App() {
         currentUser={currentUser}
         activeRole={activeRole}
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab);
-          setActiveExamSession(null);
-        }}
+        onTabChange={handleTabChange}
         onOpenPremium={() => setShowPremiumModal(true)}
         onOpenSqlModal={() => setShowSqlModal(true)}
         notifications={notifications}
@@ -596,6 +906,27 @@ export default function App() {
         badgeCount={studentBadges.filter((b) => b.isUnlocked).length}
       />
 
+      {/* Admin Access Denied Alert Toast */}
+      {adminAccessDeniedToast && (
+        <div className="fixed top-20 right-4 z-50 max-w-md bg-rose-600 text-white p-4 rounded-2xl shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="p-2 bg-white/20 rounded-xl shrink-0">
+            <span className="text-xl">⛔</span>
+          </div>
+          <div>
+            <h4 className="font-bold text-sm">Хандах эрх хязгаарлагдсан</h4>
+            <p className="text-xs text-rose-100 mt-0.5 leading-relaxed">
+              Админ системд зөвхөн <strong>profiles.role === 'admin'</strong> эрхтэй хэрэглэгч нэвтрэх эрхтэй. Та нүүр хуудас руу шилжлээ.
+            </p>
+          </div>
+          <button
+            onClick={() => setAdminAccessDeniedToast(false)}
+            className="text-white/80 hover:text-white font-bold ml-auto"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12">
         {activeExamSession ? (
@@ -606,6 +937,31 @@ export default function App() {
             userName={effectiveUser.name}
             onFinish={handleFinishExam}
             onExit={() => setActiveExamSession(null)}
+          />
+        ) : activeTab === "admin" || (activeTab === "dashboard" && activeRole === "admin") ? (
+          <AdminDashboard
+            exams={exams}
+            questions={questions}
+            users={users}
+            activationCodes={activationCodes}
+            notifications={notifications}
+            supportTickets={supportTickets}
+            submissions={submissions}
+            classes={classes}
+            onPublishExam={handlePublishExam}
+            onDeleteExam={(examId) => {
+              db.deleteExam(examId);
+              setExams(db.getExams());
+            }}
+            onStartExam={handleStartExam}
+            onGenerateActivationCode={handleGenerateActivationCode}
+            onSendNotification={handleSendNotification}
+            onReplySupportTicket={handleReplySupportTicket}
+            onToggleUserPremium={handleToggleUserPremium}
+            onUpdateUserProfile={handleUpdateUserProfile}
+            onCreateOfficialMockExam={handleCreateOfficialMockExam}
+            onDeleteQuestion={handleDeleteQuestion}
+            onUpdateQuestion={handleUpdateQuestion}
           />
         ) : activeTab === "dashboard" ? (
           activeRole === "student" ? (
@@ -624,6 +980,7 @@ export default function App() {
               onOpenLearningCenter={() => setActiveTab("learning-center")}
               onOpenArchive={() => setActiveTab("archive")}
               onOpenCustomTest={() => setActiveTab("custom-builder")}
+              onUpdateTargetScore={handleUpdateTargetScore}
             />
 
           ) : activeRole === "teacher" ? (
@@ -645,6 +1002,7 @@ export default function App() {
           ) : (
             <AdminDashboard
               exams={exams}
+              questions={questions}
               users={users}
               activationCodes={activationCodes}
               notifications={notifications}
@@ -661,6 +1019,10 @@ export default function App() {
               onSendNotification={handleSendNotification}
               onReplySupportTicket={handleReplySupportTicket}
               onToggleUserPremium={handleToggleUserPremium}
+              onUpdateUserProfile={handleUpdateUserProfile}
+              onCreateOfficialMockExam={handleCreateOfficialMockExam}
+              onDeleteQuestion={handleDeleteQuestion}
+              onUpdateQuestion={handleUpdateQuestion}
             />
           )
         ) : activeTab === "question-bank" ? (
@@ -744,7 +1106,7 @@ export default function App() {
           />
         ) : activeTab === "mistakes" ? (
           <MistakeNotebookView
-            mistakes={mistakes}
+            mistakes={effectiveUser ? mistakes.filter((m) => m.userId === effectiveUser.id) : []}
             onRemoveMistake={handleRemoveMistake}
             onUpdateMastery={handleUpdateMastery}
             onStartRetest={handleStartRetest}

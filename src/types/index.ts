@@ -111,6 +111,8 @@ export interface UserProfile {
   studentCode?: string; // 6-digit student code (e.g. 104829)
   school?: string;
   grade?: string;
+  aimag?: string; // Aimag / City (e.g. "Улаанбаатар", "Дархан-Уул", "Орхон", etc.)
+  sum?: string; // Sum / District (e.g. "Баянзүрх", "Дархан сум", "Баян-Өндөр", etc.)
   classCodes?: string[]; // IDs of classes joined
   isPremium: boolean;
   premiumExpiresAt?: string;
@@ -168,6 +170,8 @@ export interface ExamSubmission {
     Reading: { correct: number; total: number };
   };
   wrongQuestionIds?: string[];
+  classId?: string;
+  assignmentId?: string;
   submittedAt: string;
   reviewedByTeacher?: boolean;
   aiAnalysis?: OMRAnalysisReport;

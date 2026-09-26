@@ -119,11 +119,10 @@ app.post("/api/ai/parse-exam", async (req, res) => {
     const ai = getGeminiClient();
 
     if (!ai) {
-      // Return structured fallback response if no API key configured
-      return res.json({
-        success: true,
-        source: "local-parser",
-        questions: generateStructuredFallbackQuestions(rawText, year),
+      return res.status(503).json({
+        success: false,
+        error: "Gemini AI тохируулагдаагүй байна. Серверийн GEMINI_API_KEY тохиргоог шалгана уу.",
+        questions: [],
       });
     }
 
@@ -150,12 +149,12 @@ Each question MUST follow this JSON schema:
 ]
 
 Exam Title: ${examTitle || "ЭЕШ Англи хэл"}
-Exam Year: ${year || 2024}
+Exam Year: ${year || 2026}
 Raw Text / Content:
 ${rawText ? rawText.slice(0, 10000) : "Generate 5 high quality authentic ESH style questions"}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.8-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -170,13 +169,10 @@ ${rawText ? rawText.slice(0, 10000) : "Generate 5 high quality authentic ESH sty
     });
   } catch (error: any) {
     console.error("AI Parse Error:", error);
-    // Return fallback so user's workflow never breaks
-    const fallbackQuestions = generateStructuredFallbackQuestions(req.body.rawText, req.body.year);
-    return res.json({
-      success: true,
-      source: "fallback",
-      questions: fallbackQuestions,
-      errorNotice: error.message,
+    return res.status(500).json({
+      success: false,
+      error: "AI асуулт задлан шинжлэхэд алдаа гарлаа: " + (error.message || "Тодорхойгүй алдаа"),
+      questions: [],
     });
   }
 });
@@ -502,6 +498,201 @@ function parseExamQuestionsFromRawText(text: string, year: number, variant: stri
   return { questions, readingPassage };
 }
 
+// Robust fallback parser for questions when Gemini is unavailable or for instant local parse
+function parseQuestionsFallback(
+  rawText: string,
+  defaultCategory: string = "Grammar",
+  defaultLevel: string = "B1"
+) {
+  const questions: any[] = [];
+  // Split either by double newlines or by numbered patterns like 1. or №1 or Q1
+  const blocks = rawText.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+
+  let currentBlockIndex = 0;
+  for (const block of blocks) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) continue;
+
+    const firstLine = lines[0];
+    const cleanPrompt = firstLine.replace(/^(?:№|Q|Question)?\s*\d+[\.\)\:]\s*/i, "").trim();
+
+    const options: { id: string; text: string }[] = [];
+    let detectedAnswer = "A";
+    let explanation = "";
+    let detectedCategory = defaultCategory;
+    let detectedTopic = "Verb Tenses & Aspects";
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      const optMatch = line.match(/^([A-Ea-e])[\.\)\:\-\]]\s*(.*)/i);
+      if (optMatch) {
+        const letter = optMatch[1].toUpperCase();
+        let optText = optMatch[2].trim();
+        if (optText.endsWith("*")) {
+          optText = optText.slice(0, -1).trim();
+          detectedAnswer = letter;
+        }
+        options.push({ id: letter, text: optText });
+      } else if (
+        line.toLowerCase().startsWith("answer:") ||
+        line.toLowerCase().startsWith("хариу:") ||
+        line.toLowerCase().startsWith("түлхүүр:")
+      ) {
+        const ansMatch = line.match(/(?:answer|хариу|түлхүүр)\s*[:\-\s]*([A-Ea-e])/i);
+        if (ansMatch) {
+          detectedAnswer = ansMatch[1].toUpperCase();
+        }
+      } else if (
+        line.toLowerCase().startsWith("explanation:") ||
+        line.toLowerCase().startsWith("тайлбар:")
+      ) {
+        explanation = line.replace(/^(?:explanation|тайлбар)\s*[:\-\s]*/i, "").trim();
+      } else if (
+        line.toLowerCase().startsWith("category:") ||
+        line.toLowerCase().startsWith("ангилал:")
+      ) {
+        const c = line.replace(/^(?:category|ангилал)\s*[:\-\s]*/i, "").trim();
+        if (["Grammar", "Vocabulary", "Communication", "Reading"].includes(c)) {
+          detectedCategory = c;
+        }
+      } else if (
+        line.toLowerCase().startsWith("topic:") ||
+        line.toLowerCase().startsWith("сэдэв:")
+      ) {
+        detectedTopic = line.replace(/^(?:topic|сэдэв)\s*[:\-\s]*/i, "").trim();
+      }
+    }
+
+    // If options were not found line-by-line, try stem extractor
+    if (options.length < 2) {
+      const extracted = extractOptionsAndStem(block);
+      if (extracted.options.length >= 2) {
+        options.push(...extracted.options);
+      }
+    }
+
+    if (cleanPrompt && options.length >= 2) {
+      currentBlockIndex++;
+      questions.push({
+        id: `parsed-q-${Date.now()}-${currentBlockIndex}`,
+        question_text: cleanPrompt,
+        options: options.slice(0, 5),
+        correct_answer: detectedAnswer,
+        explanation: explanation || "Дүрмийн зөв хариулт ба тайлбар.",
+        category: detectedCategory,
+        topic: detectedTopic,
+        cefr_level: defaultLevel,
+      });
+    }
+  }
+
+  return questions;
+}
+
+// AI-Powered Bulk Text / PDF Ingestion parser for Question Bank
+app.post("/api/ai/parse-questions", async (req, res) => {
+  try {
+    const { rawText, defaultCategory = "Grammar", defaultLevel = "B1" } = req.body;
+    if (!rawText || !rawText.trim()) {
+      return res.status(400).json({ success: false, error: "Текст хоосон байна.", questions: [] });
+    }
+
+    const ai = getGeminiClient();
+    if (ai) {
+      try {
+        const prompt = `You are an expert English language teacher and test item author for Mongolian National University Entrance Exam (ЭЕШ - Элсэлтийн Ерөнхий Шалгалт).
+A teacher has pasted raw, messy or unformatted text from a PDF or Word document.
+Your task is to parse, extract, clean up, and return all multiple-choice questions into a clean structured JSON array.
+
+Cleaning guidelines:
+1. Fix broken line breaks, irregular whitespace, or OCR noise automatically.
+2. Ensure question prompts retain fill-in-the-blank placeholders like "_______".
+3. Extract each option with its letter (A, B, C, D, E) and clear text.
+4. Detect the correct answer if marked with an asterisk (*), or specified via Answer/Хариу, or determine the correct grammatical answer.
+5. Provide a helpful, concise grammatical explanation in Mongolian (explanation).
+6. Categorize each question into: "Grammar", "Vocabulary", "Communication", or "Reading".
+7. Assign CEFR Level: "A2", "B1", or "B2".
+8. Assign specific Topic name (e.g. "Verb Tenses & Aspects", "Conditionals", "Passive Voice", "Relative Clauses", "Modal Verbs", "Prepositions", "Articles", "Word Formation", "Synonyms & Antonyms", "Reading Comprehension").
+
+Output MUST be strictly a JSON array matching this format:
+[
+  {
+    "question_text": "Sentence prompt with _______ for missing word",
+    "options": [
+      { "id": "A", "text": "Option text" },
+      { "id": "B", "text": "Option text" },
+      { "id": "C", "text": "Option text" },
+      { "id": "D", "text": "Option text" },
+      { "id": "E", "text": "Option text" }
+    ],
+    "correct_answer": "A" | "B" | "C" | "D" | "E",
+    "explanation": "Mongolian explanation...",
+    "category": "Grammar" | "Vocabulary" | "Communication" | "Reading",
+    "topic": "Topic name",
+    "cefr_level": "A2" | "B1" | "B2"
+  }
+]
+
+Raw Text:
+"""
+${rawText.slice(0, 20000)}
+"""`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        const parsed = JSON.parse(response.text || "[]");
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validated = parsed.map((q: any, i: number) => ({
+            id: `gemini-q-${Date.now()}-${i + 1}`,
+            question_text: q.question_text || q.text || `Асуулт ${i + 1}`,
+            options: Array.isArray(q.options) && q.options.length >= 2
+              ? q.options.map((opt: any, optIdx: number) => ({
+                  id: (opt.id || ["A", "B", "C", "D", "E"][optIdx] || "A").toUpperCase(),
+                  text: String(opt.text || ""),
+                }))
+              : [
+                  { id: "A", text: "Option A" },
+                  { id: "B", text: "Option B" },
+                  { id: "C", text: "Option C" },
+                  { id: "D", text: "Option D" },
+                ],
+            correct_answer: (q.correct_answer || q.correctAnswer || "A").toUpperCase(),
+            explanation: q.explanation || "Тайлбар оруулаагүй байна.",
+            category: q.category || defaultCategory,
+            topic: q.topic || "Ерөнхий дүрэм",
+            cefr_level: q.cefr_level || q.level || defaultLevel,
+          }));
+
+          return res.json({
+            success: true,
+            source: "gemini-ai",
+            questions: validated,
+          });
+        }
+      } catch (geminiErr: any) {
+        console.warn("Gemini parse-questions failed, falling back to smart regex:", geminiErr.message);
+      }
+    }
+
+    // Fallback to local regex parser
+    const fallbackQuestions = parseQuestionsFallback(rawText, defaultCategory, defaultLevel);
+    return res.json({
+      success: true,
+      source: "regex-fallback",
+      questions: fallbackQuestions,
+    });
+  } catch (err: any) {
+    console.error("parse-questions error:", err);
+    return res.status(500).json({ success: false, error: err.message, questions: [] });
+  }
+});
+
 // AI Question Classifier (Skill -> Topic -> Subtopic)
 app.post("/api/ai/classify-question", async (req, res) => {
   try {
@@ -535,7 +726,7 @@ Return JSON:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.8-flash",
       contents: prompt,
       config: { responseMimeType: "application/json" },
     });

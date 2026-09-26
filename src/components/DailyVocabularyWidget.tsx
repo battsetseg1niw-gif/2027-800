@@ -307,6 +307,22 @@ export const DailyVocabularyWidget: React.FC<DailyVocabularyWidgetProps> = ({
             </button>
           </div>
         </div>
+      ) : words.length === 0 ? (
+        <div className="py-8 text-center bg-slate-50/60 rounded-2xl border border-slate-100 space-y-3">
+          <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+          <div className="text-sm font-bold text-slate-700">Одоогоор өнөөдрийн 10 үг үүсгээгүй байна</div>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Та дээрх "AI Шинэ 10 үг" товчийг дарж ЭЕШ-д хамгийн өндөр давтамжтай ирдэг үгсийг хиймэл оюунаар үүсгэн суралцаарай.
+          </p>
+          <button
+            disabled={isGeneratingAi}
+            onClick={handleGenerateNewAiWords}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition-all"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>AI Шинэ 10 үг үүсгэх</span>
+          </button>
+        </div>
       ) : (
         /* LIST VIEW OF 10 WORDS */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

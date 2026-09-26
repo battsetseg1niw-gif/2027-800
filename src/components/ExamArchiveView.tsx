@@ -426,41 +426,37 @@ export const ExamArchiveView: React.FC<ExamArchiveViewProps> = ({
               ))}
             </div>
           ) : (
-            <div className="bg-white rounded-3xl p-10 border border-slate-200 text-center space-y-4 shadow-xs">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-                <Calendar className="w-6 h-6" />
+            <div className="bg-white rounded-3xl p-12 border border-slate-200 text-center space-y-4 shadow-xs">
+              <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                {pastPapers.length === 0 ? <BookOpen className="w-7 h-7" /> : <Search className="w-7 h-7" />}
               </div>
               <div className="space-y-1">
                 <h3 className="text-base font-black text-slate-900">
-                  Сонгосон шүүлтүүрт тохирох шалгалт олдсонгүй
+                  {pastPapers.length === 0
+                    ? "Одоогоор нийтлэгдсэн шалгалт байхгүй байна (No exams available yet)"
+                    : "Сонгосон шүүлтүүрт тохирох шалгалт олдсонгүй"}
                 </h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  Шүүлтүүрээ цэвэрлэх эсвэл доорх товчийг дарж 2006–2026 оны бүх 84 шалгалтыг бүрэн сэргээнэ үү.
+                  {pastPapers.length === 0
+                    ? "Supabase датабаазад одоогоор шалгалт бүртгэгдээгүй байна. Админ эсвэл багш шалгалт нийтэлсний дараа энд автоматаар харагдана."
+                    : "Шүүлтүүрийн он, хувилбар эсвэл хайлтын үгээ өөрчилнө үү."}
                 </p>
               </div>
 
-              <div className="flex items-center justify-center gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setSelectedYear("all");
-                    setSelectedVariant("all");
-                    setSearchQuery("");
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
-                >
-                  Бүх шүүлтүүрийг цэвэрлэх
-                </button>
-                <button
-                  onClick={() => {
-                    db.resetToDefaultExams();
-                    window.location.reload();
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center gap-2 transition-colors shadow-sm"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Бүх 2006–2026 оныг (84 шалгалт) сэргээж ачаалах</span>
-                </button>
-              </div>
+              {pastPapers.length > 0 && (
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setSelectedYear("all");
+                      setSelectedVariant("all");
+                      setSearchQuery("");
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
+                  >
+                    Бүх шүүлтүүрийг цэвэрлэх
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
